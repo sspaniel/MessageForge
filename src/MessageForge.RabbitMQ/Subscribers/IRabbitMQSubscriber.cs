@@ -1,4 +1,4 @@
-﻿namespace MessageForge.RabbitMQ.Consumers;
+﻿namespace MessageForge.RabbitMQ.Subscribers;
 
 internal interface IRabbitMQSubscriber
 {

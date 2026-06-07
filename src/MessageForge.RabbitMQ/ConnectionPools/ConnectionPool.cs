@@ -6,19 +6,14 @@ namespace MessageForge.RabbitMQ.ConnectionPools;
 /// <summary>
 /// Connection pool for RabbitMQ.
 /// </summary>
-public class ConnectionPool : IConnectionPool
+/// <remarks>
+/// Initializes a new instance of the <see cref="ConnectionPool"/> class.
+/// </remarks>
+/// <param name="options">The messaging options to configure the connection pool.</param>
+public class ConnectionPool(MessagingServiceOptions options) : IConnectionPool
 {
-    private readonly MessagingServiceOptions _options;
-    private readonly Queue<IConnection> _connections = new();
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="ConnectionPool"/> class.
-    /// </summary>
-    /// <param name="options">The messaging options to configure the connection pool.</param>
-    public ConnectionPool(MessagingServiceOptions options)
-    {
-        _options = options;
-    }
+    private readonly MessagingServiceOptions _options = options;
+    private readonly Queue<IConnection> _connections = new Queue<IConnection>();
 
     /// <summary>
     /// Disposes the connection pool.

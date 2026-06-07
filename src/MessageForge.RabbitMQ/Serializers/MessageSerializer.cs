@@ -6,7 +6,7 @@ namespace MessageForge.RabbitMQ.Serializers;
 
 internal sealed class MessageSerializer : IMessageSerializer
 {
-    private static readonly JsonSerializerOptions Options = new()
+    private static readonly JsonSerializerOptions Options = new JsonSerializerOptions()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false,
@@ -27,6 +27,6 @@ internal sealed class MessageSerializer : IMessageSerializer
             throw new ArgumentNullException(nameof(message));
         }
 
-        return JsonSerializer.SerializeToUtf8Bytes(message, typeof(TMessage), Options);
+        return JsonSerializer.SerializeToUtf8Bytes(message, Options);
     }
 }

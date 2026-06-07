@@ -1,5 +1,5 @@
-﻿using MessageForge.RabbitMQ.Consumers;
-using MessageForge.RabbitMQ.Publishers;
+﻿using MessageForge.RabbitMQ.Publishers;
+using MessageForge.RabbitMQ.Subscribers;
 using MessageForge.Subscribers;
 
 namespace MessageForge.RabbitMQ.Services;

@@ -10,9 +10,9 @@ using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
-namespace MessageForge.RabbitMQ.Consumers;
+namespace MessageForge.RabbitMQ.Subscribers;
 
-internal class RabbitMQSubscriber: IRabbitMQSubscriber
+internal class RabbitMQSubscriber : IRabbitMQSubscriber
 {
     private readonly SubscriberOptions _options;
     private readonly IConnectionPool _connectionPool;

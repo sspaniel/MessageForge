@@ -1,7 +1,7 @@
 ﻿using MessageForge.Errors;
 using MessageForge.Subscribers;
 
-namespace MessageForge.RabbitMQ.Consumers;
+namespace MessageForge.RabbitMQ.Subscribers;
 
 /// <summary>
 /// Options for configuring a message subscriber for RabbitMQ.
@@ -10,9 +10,9 @@ namespace MessageForge.RabbitMQ.Consumers;
 /// <param name="messageType">The type of the message the subscriber will handle.</param>
 public sealed class SubscriberOptions(Type subscriberType, Type messageType)
 {
-    internal readonly Type SubscriberType = subscriberType ?? throw new ArgumentNullException(nameof(subscriberType));
+    internal Type SubscriberType => subscriberType;
 
-    internal readonly Type MessageType = messageType ?? throw new ArgumentNullException(nameof(messageType));
+    internal Type MessageType => messageType;
 
     internal TimeSpan Ttl { get; set; } = TimeSpan.Zero;
 

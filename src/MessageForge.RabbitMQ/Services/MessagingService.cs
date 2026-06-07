@@ -1,6 +1,6 @@
 ﻿using MessageForge.RabbitMQ.ConnectionPools;
-using MessageForge.RabbitMQ.Consumers;
 using MessageForge.RabbitMQ.Helpers;
+using MessageForge.RabbitMQ.Subscribers;
 using Microsoft.Extensions.Hosting;
 
 namespace MessageForge.RabbitMQ.Services;
