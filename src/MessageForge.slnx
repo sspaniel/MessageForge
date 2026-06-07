@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="MessageForge.RabbitMQ.Tests/MessageForge.RabbitMQ.Tests.csproj" Id="0ecfa93d-0bdc-4965-bd20-8fca64c13463" />
+  <Project Path="MessageForge.RabbitMQ/MessageForge.RabbitMQ.csproj" Id="7ac4df7b-286d-4536-a082-b91829ada8f0" />
+  <Project Path="MessageForge/MessageForge.csproj" />
+</Solution>
