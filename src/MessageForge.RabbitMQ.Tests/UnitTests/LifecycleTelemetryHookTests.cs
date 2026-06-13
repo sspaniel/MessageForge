@@ -126,6 +126,69 @@ public sealed class LifecycleTelemetryHookTests
         context.Activity.GetTagItem("messaging.message.type").ShouldBe(typeof(TestSimpleMessage).FullName);
         context.Activity.GetTagItem("messaging.message.type").ShouldNotBe("SECRET_BODY_CONTENT");
         events.ShouldAllBe(e => !e.Contains("SECRET_BODY_CONTENT", StringComparison.Ordinal));
+        context.Activity!.GetTagItem("messaging.message.body").ShouldBeNull();
+    }
+
+    [Test]
+    public async Task BeforeMessagePublish_Includes_Message_Body_When_Enabled()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.IncludeMessageContentInOpenTelemetry();
+
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
+
+        const string secretBody = "SECRET_BODY_CONTENT";
+        var context = new MessagePublishContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage { String = secretBody },
+            MessageType = typeof(TestSimpleMessage),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeMessagePublishHooks, context);
+
+        // assert
+        context.Activity.ShouldNotBeNull();
+        context.Activity!.GetTagItem("messaging.message.body")
+            .ShouldBe("{\"Guid\":\"00000000-0000-0000-0000-000000000000\",\"String\":\"SECRET_BODY_CONTENT\",\"Integer\":0,\"Float\":0,\"DateTime\":\"0001-01-01T00:00:00\"}");
+    }
+
+    [Test]
+    public async Task BeforeMessagePublish_Excludes_Message_Body_By_Default()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
+
+        var context = new MessagePublishContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage { String = "SECRET_BODY_CONTENT" },
+            MessageType = typeof(TestSimpleMessage),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeMessagePublishHooks, context);
+
+        // assert
+        context.Activity.ShouldNotBeNull();
+        context.Activity!.GetTagItem("messaging.message.body").ShouldBeNull();
     }
 
     [Test]

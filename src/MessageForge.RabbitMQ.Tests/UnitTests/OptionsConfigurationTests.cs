@@ -57,6 +57,7 @@ public sealed class OptionsConfigurationTests
         options.ConnectionPoolSize.ShouldBe(Environment.ProcessorCount);
         options.PublisherOptions.ShouldNotBeNull();
         options.SubscriberOptions.ShouldBeEmpty();
+        options.IncludeMessageContentInTelemetry.ShouldBeFalse();
     }
 
     [Test]
@@ -72,6 +73,33 @@ public sealed class OptionsConfigurationTests
         // assert
         options.ConnectionString.ShouldBe("amqp://localhost");
         options.ConnectionPoolSize.ShouldBe(8);
+    }
+
+    [Test]
+    public void IncludeMessageContentInOpenTelemetry_Sets_Flag()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+
+        // act
+        options.IncludeMessageContentInOpenTelemetry();
+        options.IncludeMessageContentInOpenTelemetry(false);
+
+        // assert
+        options.IncludeMessageContentInTelemetry.ShouldBeFalse();
+    }
+
+    [Test]
+    public void IncludeMessageContentInOpenTelemetry_Enables_Message_Content_In_Telemetry()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+
+        // act
+        options.IncludeMessageContentInOpenTelemetry();
+
+        // assert
+        options.IncludeMessageContentInTelemetry.ShouldBeTrue();
     }
 
     [Test]

@@ -47,6 +47,8 @@ public sealed class MessageServiceOptions
 
     internal LinkedList<Func<MessageErrorContext, Task>> OnRetryLimitReachedHooks { get; } = new();
 
+    internal bool IncludeMessageContentInTelemetry { get; set; }
+
     /// <summary>
     /// Sets the connection string.
     /// </summary>
@@ -63,6 +65,16 @@ public sealed class MessageServiceOptions
     public void UseConnectionPoolSize(int connectionPoolSize)
     {
         ConnectionPoolSize = connectionPoolSize;
+    }
+
+    /// <summary>
+    /// Configures whether serialized message content is included in OpenTelemetry span tags.
+    /// Disabled by default.
+    /// </summary>
+    /// <param name="include">Whether to include message content in telemetry.</param>
+    public void IncludeMessageContentInOpenTelemetry(bool include = true)
+    {
+        IncludeMessageContentInTelemetry = include;
     }
 
     /// <summary>
