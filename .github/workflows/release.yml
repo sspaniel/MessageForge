@@ -4,11 +4,6 @@ name: MessageForge Release
 
 on:
   workflow_dispatch:
-    inputs:
-      PACKAGE_VERSION:
-        description: Package version
-        required: true
-        default: 1.0.0-prerelease
 
 jobs:
   build-pack-push:
@@ -20,7 +15,7 @@ jobs:
       id-token: write
 
     env:
-      PACKAGE_VERSION: ${{ github.event.inputs.PACKAGE_VERSION }}
+      PACKAGE_VERSION: 0.0.${{ github.run_number }}-prerelease
 
     steps:
     - uses: actions/checkout@v6
