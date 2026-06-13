@@ -31,6 +31,34 @@ public sealed class MessageServiceOptions
 
     internal LinkedList<Func<MessageHandleContext, Task>> AfterMessageHandledHooks { get; } = new();
 
+    internal LinkedList<Func<MessageServiceContext, Task>> BeforeMessageServiceStopHooks { get; } = new();
+
+    internal LinkedList<Func<MessageServiceContext, Task>> AfterMessageServiceStoppedHooks { get; } = new();
+
+    internal LinkedList<Func<MessageErrorContext, Task>> OnMessageHandleErrorHooks { get; } = new();
+
+    internal LinkedList<Func<MessageErrorContext, Task>> OnMessagePublishErrorHooks { get; } = new();
+
+    internal LinkedList<Func<MessageErrorContext, Task>> OnMessageDeserializeErrorHooks { get; } = new();
+
+    internal LinkedList<Func<MessageErrorContext, Task>> OnMessageSerializeErrorHooks { get; } = new();
+
+    internal LinkedList<Func<MessageErrorContext, Task>> OnMessageRetryHooks { get; } = new();
+
+    internal LinkedList<Func<MessageErrorContext, Task>> OnRetryLimitReachedHooks { get; } = new();
+
+    internal LinkedList<Func<MessageSubscriberContext, Task>> BeforeSubscriberInitializeHooks { get; } = new();
+
+    internal LinkedList<Func<MessageSubscriberContext, Task>> AfterSubscriberInitializedHooks { get; } = new();
+
+    internal LinkedList<Func<MessageSubscriberContext, Task>> BeforeSubscriberStartHooks { get; } = new();
+
+    internal LinkedList<Func<MessageSubscriberContext, Task>> AfterSubscriberStartedHooks { get; } = new();
+
+    internal LinkedList<Func<MessageSubscriberContext, Task>> BeforeSubscriberStopHooks { get; } = new();
+
+    internal LinkedList<Func<MessageSubscriberContext, Task>> AfterSubscriberStoppedHooks { get; } = new();
+
     /// <summary>
     /// Sets the connection string.
     /// </summary>
@@ -122,6 +150,160 @@ public sealed class MessageServiceOptions
     {
         ArgumentNullException.ThrowIfNull(hook);
         AfterMessageHandledHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before the message service stops.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeMessageServiceStop(Func<MessageServiceContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        BeforeMessageServiceStopHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after the message service has stopped.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterMessageServiceStopped(Func<MessageServiceContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        AfterMessageServiceStoppedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked when a message handler throws an exception.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnMessageHandleError(Func<MessageErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        OnMessageHandleErrorHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked when publishing a message fails.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnMessagePublishError(Func<MessageErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        OnMessagePublishErrorHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked when deserializing a consumed message fails.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnMessageDeserializeError(Func<MessageErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        OnMessageDeserializeErrorHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked when serializing a message for publish fails.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnMessageSerializeError(Func<MessageErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        OnMessageSerializeErrorHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before a failed message is requeued for retry.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnMessageRetry(Func<MessageErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        OnMessageRetryHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked when a message has reached its retry limit and will be dead-lettered.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnRetryLimitReached(Func<MessageErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        OnRetryLimitReachedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before a subscriber initializes its queue topology.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeSubscriberInitialize(Func<MessageSubscriberContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        BeforeSubscriberInitializeHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after a subscriber has initialized its queue topology.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterSubscriberInitialized(Func<MessageSubscriberContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        AfterSubscriberInitializedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before a subscriber starts consuming messages.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeSubscriberStart(Func<MessageSubscriberContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        BeforeSubscriberStartHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after a subscriber has started consuming messages.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterSubscriberStarted(Func<MessageSubscriberContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        AfterSubscriberStartedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before a subscriber stops consuming messages.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeSubscriberStop(Func<MessageSubscriberContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        BeforeSubscriberStopHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after a subscriber has stopped consuming messages.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterSubscriberStopped(Func<MessageSubscriberContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        AfterSubscriberStoppedHooks.AddLast(hook);
     }
 
     /// <summary>

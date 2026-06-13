@@ -64,9 +64,19 @@ internal sealed class MessageService : IHostedService
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        var context = new MessageServiceContext
+        {
+            ServiceProvider = _serviceProvider,
+            CancellationToken = cancellationToken,
+        };
+
+        await MessageServiceOptions.InvokeHooksAsync(_options.BeforeMessageServiceStopHooks, context);
+
         foreach (var subscriber in Subscribers)
         {
             await subscriber.StopAsync(cancellationToken);
         }
+
+        await MessageServiceOptions.InvokeHooksAsync(_options.AfterMessageServiceStoppedHooks, context);
     }
 }

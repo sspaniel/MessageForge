@@ -42,6 +42,10 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        var subscriberContext = CreateSubscriberContext(cancellationToken);
+
+        await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.BeforeSubscriberInitializeHooks, subscriberContext);
+
         var connection = _connectionPool.GetConnection();
         using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
@@ -82,10 +86,16 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
             exchange: _options.MessageType.FullName ?? throw new ArgumentNullException(nameof(_options.MessageType)),
             routingKey: string.Empty,
             cancellationToken: cancellationToken);
+
+        await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.AfterSubscriberInitializedHooks, subscriberContext);
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
+        var subscriberContext = CreateSubscriberContext(cancellationToken);
+
+        await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.BeforeSubscriberStartHooks, subscriberContext);
+
         var connection = _connectionPool.GetConnection();
 
         var channelOptions = new CreateChannelOptions(
@@ -98,6 +108,8 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
         _rabbitMqConsumer.ReceivedAsync += async (sender, eventArgs) => await ConsumeMessageAsync(eventArgs, cancellationToken);
         await _channel.BasicQosAsync(prefetchSize: 0, prefetchCount: _options.MaxConcurrency, global: false, cancellationToken: cancellationToken);
         await _channel.BasicConsumeAsync(queue: _queueName, autoAck: false, consumer: _rabbitMqConsumer, cancellationToken: cancellationToken);
+
+        await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.AfterSubscriberStartedHooks, subscriberContext);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
@@ -106,6 +118,10 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
         {
             return;
         }
+
+        var subscriberContext = CreateSubscriberContext(cancellationToken);
+
+        await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.BeforeSubscriberStopHooks, subscriberContext);
 
         var consumerTags = _rabbitMqConsumer?.ConsumerTags ?? Array.Empty<string>();
 
@@ -121,7 +137,19 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
 
         await _channel.DisposeAsync();
         _channel = null;
+
+        await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.AfterSubscriberStoppedHooks, subscriberContext);
     }
+
+    private MessageSubscriberContext CreateSubscriberContext(CancellationToken cancellationToken) =>
+        new()
+        {
+            ServiceProvider = _serviceProvider,
+            SubscriberType = _options.SubscriberType,
+            MessageType = _options.MessageType,
+            QueueName = _queueName,
+            CancellationToken = cancellationToken,
+        };
 
     private async Task ConsumeMessageAsync(BasicDeliverEventArgs eventArgs, CancellationToken cancellationToken)
     {
@@ -135,13 +163,27 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
 
         if (retryLimitReached)
         {
+            await MessageServiceOptions.InvokeHooksAsync(
+                _messageServiceOptions.OnRetryLimitReachedHooks,
+                new MessageErrorContext
+                {
+                    ServiceProvider = _serviceProvider,
+                    MessageType = _options.MessageType,
+                    DeliveryCount = deliveryCount,
+                    WillRetry = false,
+                    WillDeadLetter = true,
+                    CancellationToken = cancellationToken,
+                });
+
             await _channel.BasicRejectAsync(eventArgs.DeliveryTag, requeue: false, cancellationToken);
             return;
         }
 
+        object? message = null;
+
         try
         {
-            var message = _messageSerializer.Deserialize(_options.MessageType, eventArgs);
+            message = _messageSerializer.Deserialize(_options.MessageType, eventArgs);
 
             if (message is null)
             {
@@ -205,6 +247,21 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
         {
             _logger.LogError(error, "Failed to deserialize message of type {messageType}.", _options.MessageType.Name);
 
+            var willDeadLetter = _options.SerializerExceptionBehavior == SubscriberSerializerExceptionBehavior.DeadLetter;
+
+            await MessageServiceOptions.InvokeHooksAsync(
+                _messageServiceOptions.OnMessageDeserializeErrorHooks,
+                new MessageErrorContext
+                {
+                    ServiceProvider = _serviceProvider,
+                    MessageType = _options.MessageType,
+                    Exception = error,
+                    DeliveryCount = deliveryCount,
+                    WillRetry = false,
+                    WillDeadLetter = willDeadLetter,
+                    CancellationToken = cancellationToken,
+                });
+
             if (_options.SerializerExceptionBehavior == SubscriberSerializerExceptionBehavior.Ignore)
             {
                 await _channel.BasicAckAsync(eventArgs.DeliveryTag, multiple: false, cancellationToken);
@@ -221,6 +278,20 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
         {
             _logger.LogError(exception, "{subscriberType} failed to process message of type {messageType}.", _options.SubscriberType.Name, _options.MessageType.Name);
 
+            var errorContext = new MessageErrorContext
+            {
+                ServiceProvider = _serviceProvider,
+                Message = message,
+                MessageType = _options.MessageType,
+                Exception = exception,
+                DeliveryCount = deliveryCount,
+                WillRetry = true,
+                WillDeadLetter = false,
+                CancellationToken = cancellationToken,
+            };
+
+            await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.OnMessageHandleErrorHooks, errorContext);
+
             var error = new MessageForgeError(_options.SubscriberType.Name, exception);
             var errorBody = _messageSerializer.Serialize(error);
 
@@ -233,6 +304,8 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
                 cancellationToken: cancellationToken);
 
             await Task.Delay(_options.RetryDelay, cancellationToken);
+
+            await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.OnMessageRetryHooks, errorContext);
 
             await _channel.BasicRejectAsync(eventArgs.DeliveryTag, requeue: true, cancellationToken);
         }

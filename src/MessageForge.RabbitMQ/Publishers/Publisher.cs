@@ -73,6 +73,20 @@ internal sealed class Publisher : IPublisher
         {
             _logger.LogError(error, "Error serializing message of type {messageType}.", typeof(TMessage).Name);
 
+            await MessageServiceOptions.InvokeHooksAsync(
+                _options.OnMessageSerializeErrorHooks,
+                new MessageErrorContext
+                {
+                    ServiceProvider = _serviceProvider,
+                    Message = message,
+                    MessageType = typeof(TMessage),
+                    Exception = error,
+                    DeliveryCount = 0,
+                    WillRetry = false,
+                    WillDeadLetter = false,
+                    CancellationToken = cancellationToken,
+                });
+
             if (_options.PublisherOptions.SerializerExceptionBehavior == PublisherSerializerExceptionBehavior.Throw)
             {
                 throw;
@@ -81,6 +95,21 @@ internal sealed class Publisher : IPublisher
         catch (Exception error)
         {
             _logger.LogError(error, "Error publishing message of type {messageType}", typeof(TMessage).Name);
+
+            await MessageServiceOptions.InvokeHooksAsync(
+                _options.OnMessagePublishErrorHooks,
+                new MessageErrorContext
+                {
+                    ServiceProvider = _serviceProvider,
+                    Message = message,
+                    MessageType = typeof(TMessage),
+                    Exception = error,
+                    DeliveryCount = 0,
+                    WillRetry = false,
+                    WillDeadLetter = false,
+                    CancellationToken = cancellationToken,
+                });
+
             throw new MessagePublishException($"Error publishing message of type {typeof(TMessage).Name}.", error);
         }
     }
