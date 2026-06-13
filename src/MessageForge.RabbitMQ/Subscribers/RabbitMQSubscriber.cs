@@ -202,6 +202,8 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
 
             await _channel.BasicAckAsync(eventArgs.DeliveryTag, multiple: false, cancellationToken);
 
+            var activity = handleContext.Activity;
+
             handleContext = new MessageHandleContext
             {
                 ServiceProvider = scope.ServiceProvider,
@@ -210,6 +212,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
                 DeliveryCount = deliveryCount,
                 HandleAsyncReturnedUnexpectedType = handleAsyncReturnedUnexpectedType,
                 CancellationToken = cancellationToken,
+                Activity = activity,
             };
 
             await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.AfterMessageHandledHooks, handleContext);

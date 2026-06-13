@@ -5,6 +5,8 @@ using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Serializers;
 using MessageForge.RabbitMQ.Services;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
 
 namespace MessageForge.RabbitMQ.DependencyInjection;
 
@@ -22,8 +24,12 @@ public static class Extensions
     {
         var options = new MessageServiceOptions();
         configure(options);
+        LifecycleTelemetryHooks.Register(options);
         LifecycleLoggingHooks.Register(options);
         options.Validate();
+
+        services.AddOpenTelemetry()
+            .WithTracing(tracing => tracing.AddSource(MessageForgeActivitySource.Name));
 
         services.AddSingleton(options);
         services.AddSingleton<IConnectionPool, ConnectionPool>();

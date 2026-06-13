@@ -84,7 +84,8 @@ public sealed class ServiceCollectionExtensionsTests
             options.UseConnectionString("amqp://localhost"));
 
         // assert
-        services.ShouldNotContain(d => d.ServiceType == typeof(IHostedService));
+        services.ShouldNotContain(d =>
+            d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(MessageService));
     }
 
     [Test]

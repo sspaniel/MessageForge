@@ -4,12 +4,15 @@ using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Services;
 using MessageForge.RabbitMQ.Tests.TestObjects;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Trace;
 using Shouldly;
 
 namespace MessageForge.RabbitMQ.Tests.UnitTests;
 
-public sealed class LifecycleLoggingHookTests
+public sealed class LifecycleTelemetryHookTests
 {
     [TestCase(nameof(MessageServiceOptions.BeforeMessageServiceStartHooks))]
     [TestCase(nameof(MessageServiceOptions.AfterMessageServiceStartedHooks))]
@@ -25,20 +28,20 @@ public sealed class LifecycleLoggingHookTests
     [TestCase(nameof(MessageServiceOptions.OnMessageSerializeErrorHooks))]
     [TestCase(nameof(MessageServiceOptions.OnMessageRetryHooks))]
     [TestCase(nameof(MessageServiceOptions.OnRetryLimitReachedHooks))]
-    public void Register_Adds_Logging_Hook_To_Each_Collection(string hooksPropertyName)
+    public void Register_Adds_Telemetry_Hook_To_Each_Collection(string hooksPropertyName)
     {
         // arrange
         var options = new MessageServiceOptions();
 
         // act
-        LifecycleLoggingHooks.Register(options);
+        LifecycleTelemetryHooks.Register(options);
 
         // assert
         GetHookCount(options, hooksPropertyName).ShouldBe(1);
     }
 
     [Test]
-    public void AddMessageForgeRabbitMQ_Registers_Default_Logging_Hooks()
+    public void AddMessageForgeRabbitMQ_Registers_Default_Telemetry_And_Logging_Hooks()
     {
         // arrange
         var services = new ServiceCollection();
@@ -56,16 +59,37 @@ public sealed class LifecycleLoggingHookTests
     }
 
     [Test]
-    public async Task Default_Logging_Hook_Runs_Before_Telemetry_Hook()
+    public async Task AddMessageForgeRabbitMQ_Starts_TracerProvider_For_MessageForge_Activity_Source()
+    {
+        // arrange
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddMessageForgeRabbitMQ(options =>
+                    options.UseConnectionString("amqp://localhost"));
+            })
+            .Build();
+
+        // act
+        await host.StartAsync();
+
+        try
+        {
+            // assert
+            host.Services.GetService<TracerProvider>().ShouldNotBeNull();
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Test]
+    public async Task Telemetry_Hooks_Run_After_Logging_Hooks_And_Before_User_Hooks()
     {
         // arrange
         var options = new MessageServiceOptions();
         var events = new List<string>();
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddProvider(new TestLoggerProvider(events)));
-        var serviceProvider = services.BuildServiceProvider();
-
-        using var listener = CreateActivityListener();
 
         LifecycleTelemetryHooks.Register(options);
         LifecycleLoggingHooks.Register(options);
@@ -74,6 +98,12 @@ public sealed class LifecycleLoggingHookTests
             events.Add("user");
             return Task.CompletedTask;
         });
+
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddProvider(new TestLoggerProvider(events)));
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
 
         var context = new MessagePublishContext
         {
@@ -86,71 +116,98 @@ public sealed class LifecycleLoggingHookTests
         // act
         await MessageServiceOptions.InvokeHooksAsync(options.BeforeMessagePublishHooks, context);
 
-        // assert
+        // assert — logging first, telemetry sets activity, user hook last
         events.Count.ShouldBe(2);
         events[0].ShouldStartWith("log:");
         events[1].ShouldBe("user");
         context.Activity.ShouldNotBeNull();
         context.Activity!.Source.Name.ShouldBe(MessageForgeActivitySource.Name);
+        context.Activity.OperationName.ShouldBe("messageforge.message.publish");
+        context.Activity.GetTagItem("messaging.message.type").ShouldBe(typeof(TestSimpleMessage).FullName);
+        context.Activity.GetTagItem("messaging.message.type").ShouldNotBe("SECRET_BODY_CONTENT");
+        events.ShouldAllBe(e => !e.Contains("SECRET_BODY_CONTENT", StringComparison.Ordinal));
     }
 
     [Test]
-    public async Task Default_Logging_Hook_Does_Not_Log_Message_Body()
+    public async Task Before_And_After_Publish_Hooks_Complete_Activity()
     {
         // arrange
         var options = new MessageServiceOptions();
-        var events = new List<string>();
-        var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddProvider(new TestLoggerProvider(events)));
-        var serviceProvider = services.BuildServiceProvider();
-        const string secretBody = "SECRET_BODY_CONTENT";
+        LifecycleTelemetryHooks.Register(options);
 
-        LifecycleLoggingHooks.Register(options);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
 
         var context = new MessagePublishContext
         {
             ServiceProvider = serviceProvider,
-            Message = new TestSimpleMessage { String = secretBody },
+            Message = new TestSimpleMessage(),
             MessageType = typeof(TestSimpleMessage),
             CancellationToken = CancellationToken.None,
         };
 
         // act
         await MessageServiceOptions.InvokeHooksAsync(options.BeforeMessagePublishHooks, context);
+        var startedActivity = context.Activity;
+        await MessageServiceOptions.InvokeHooksAsync(options.AfterMessagePublishedHooks, context);
 
         // assert
-        events.ShouldNotBeEmpty();
-        events.ShouldAllBe(e => !e.Contains(secretBody, StringComparison.Ordinal));
+        startedActivity.ShouldNotBeNull();
+        startedActivity!.Status.ShouldBe(ActivityStatusCode.Ok);
+        context.Activity.ShouldBeNull();
     }
 
     [Test]
-    public async Task AfterMessageHandled_Logging_Hook_Logs_Warning_When_HandleAsync_Return_Type_Is_Unexpected()
+    public async Task Publish_Error_Hook_Records_Exception_On_Activity()
     {
         // arrange
         var options = new MessageServiceOptions();
-        var events = new List<string>();
+        LifecycleTelemetryHooks.Register(options);
+
         var services = new ServiceCollection();
-        services.AddLogging(builder => builder.AddProvider(new TestLoggerProvider(events)));
+        services.AddLogging();
         var serviceProvider = services.BuildServiceProvider();
 
-        LifecycleLoggingHooks.Register(options);
+        Activity? recordedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => recordedActivity = activity,
+        };
+        ActivitySource.AddActivityListener(listener);
 
-        var context = new MessageHandleContext
+        var exception = new InvalidOperationException("publish failed");
+        var context = new MessageErrorContext
         {
             ServiceProvider = serviceProvider,
-            Message = new TestSimpleMessage(),
             MessageType = typeof(TestSimpleMessage),
-            DeliveryCount = 0,
-            HandleAsyncReturnedUnexpectedType = true,
+            Exception = exception,
             CancellationToken = CancellationToken.None,
         };
 
         // act
-        await MessageServiceOptions.InvokeHooksAsync(options.AfterMessageHandledHooks, context);
+        await MessageServiceOptions.InvokeHooksAsync(options.OnMessagePublishErrorHooks, context);
 
         // assert
-        events.ShouldContain(e => e.StartsWith("log:Warning:", StringComparison.Ordinal));
-        events.ShouldContain(e => e.Contains("did not return Task or ValueTask", StringComparison.Ordinal));
+        recordedActivity.ShouldNotBeNull();
+        recordedActivity!.OperationName.ShouldBe("messageforge.message.publish_error");
+        recordedActivity.Status.ShouldBe(ActivityStatusCode.Error);
+        recordedActivity.Tags.Any(t => t.Key == "messaging.message.type").ShouldBeTrue();
+    }
+
+    private static ActivityListener CreateActivityListener()
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
     }
 
     private static int GetHookCount(MessageServiceOptions options, string hooksPropertyName) =>
@@ -172,18 +229,6 @@ public sealed class LifecycleLoggingHookTests
             nameof(MessageServiceOptions.OnRetryLimitReachedHooks) => options.OnRetryLimitReachedHooks.Count,
             _ => throw new ArgumentOutOfRangeException(nameof(hooksPropertyName)),
         };
-
-    private static ActivityListener CreateActivityListener()
-    {
-        var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
-        };
-
-        ActivitySource.AddActivityListener(listener);
-        return listener;
-    }
 
     private sealed class TestLoggerProvider(List<string> events) : ILoggerProvider
     {
