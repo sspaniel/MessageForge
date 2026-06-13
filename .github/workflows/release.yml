@@ -4,6 +4,22 @@ name: MessageForge Release
 
 on:
   workflow_dispatch:
+    inputs:
+      major:
+        description: Major version
+        required: true
+        default: '0'
+        type: string
+      minor:
+        description: Minor version
+        required: true
+        default: '0'
+        type: string
+      prerelease:
+        description: Publish as prerelease
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   build-pack-push:
@@ -15,7 +31,7 @@ jobs:
       id-token: write
 
     env:
-      PACKAGE_VERSION: 0.0.${{ github.run_number }}-prerelease
+      PACKAGE_VERSION: ${{ inputs.prerelease && format('{0}.{1}.{2}-prerelease', inputs.major, inputs.minor, github.run_number) || format('{0}.{1}.{2}', inputs.major, inputs.minor, github.run_number) }}
 
     steps:
     - uses: actions/checkout@v6
