@@ -31,9 +31,11 @@ internal sealed class Publisher : IPublisher
     public async Task PublishAsync<TMessage>(TMessage message, CancellationToken cancellationToken = default)
         where TMessage : new()
     {
+        MessagePublishContext? publishContext = null;
+
         try
         {
-            var publishContext = new MessagePublishContext
+            publishContext = new MessagePublishContext
             {
                 ServiceProvider = _serviceProvider,
                 Message = message!,
@@ -77,6 +79,7 @@ internal sealed class Publisher : IPublisher
                     WillRetry = false,
                     WillDeadLetter = false,
                     CancellationToken = cancellationToken,
+                    Activity = publishContext?.Activity,
                 });
 
             if (_options.PublisherOptions.SerializerExceptionBehavior == PublisherSerializerExceptionBehavior.Throw)
@@ -98,6 +101,7 @@ internal sealed class Publisher : IPublisher
                     WillRetry = false,
                     WillDeadLetter = false,
                     CancellationToken = cancellationToken,
+                    Activity = publishContext?.Activity,
                 });
 
             throw new MessagePublishException($"Error publishing message of type {typeof(TMessage).Name}.", error);

@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace MessageForge.RabbitMQ.Lifecycle;
 
 /// <summary>
@@ -44,4 +46,9 @@ public sealed class MessageErrorContext
     /// Gets the <see cref="CancellationToken"/> for the current operation.
     /// </summary>
     public CancellationToken CancellationToken { get; init; }
+
+    /// <summary>
+    /// Gets the in-flight lifecycle <see cref="Activity"/> for the current operation, if any.
+    /// </summary>
+    public Activity? Activity { get; init; }
 }

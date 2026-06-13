@@ -19,7 +19,7 @@ internal static class LifecycleTelemetryHooks
 
         options.BeforeMessageServiceStartHooks.AddFirst(ctx =>
         {
-            ctx.Activity = MessageForgeActivitySource.Instance.StartActivity(
+            ctx.Activity = StartLifecycleActivity(
                 "messageforge.service.start",
                 ActivityKind.Server);
             return Task.CompletedTask;
@@ -34,7 +34,7 @@ internal static class LifecycleTelemetryHooks
 
         options.BeforeMessageServiceStopHooks.AddFirst(ctx =>
         {
-            ctx.Activity = MessageForgeActivitySource.Instance.StartActivity(
+            ctx.Activity = StartLifecycleActivity(
                 "messageforge.service.stop",
                 ActivityKind.Server);
             return Task.CompletedTask;
@@ -49,7 +49,7 @@ internal static class LifecycleTelemetryHooks
 
         options.BeforeMessagePublishHooks.AddFirst(ctx =>
         {
-            var activity = MessageForgeActivitySource.Instance.StartActivity(
+            var activity = StartLifecycleActivity(
                 "messageforge.message.publish",
                 ActivityKind.Producer);
             SetMessageTags(activity, ctx.MessageType, ctx.Message, includeMessageContent);
@@ -66,7 +66,7 @@ internal static class LifecycleTelemetryHooks
 
         options.BeforeMessageHandleHooks.AddFirst(ctx =>
         {
-            var activity = MessageForgeActivitySource.Instance.StartActivity(
+            var activity = StartLifecycleActivity(
                 "messageforge.message.handle",
                 ActivityKind.Consumer);
             SetMessageTags(activity, ctx.MessageType, ctx.Message, includeMessageContent);
@@ -94,6 +94,7 @@ internal static class LifecycleTelemetryHooks
                 ctx.MessageType,
                 ctx.Message,
                 includeMessageContent,
+                ctx.Activity,
                 ctx.Exception);
             return Task.CompletedTask;
         });
@@ -105,15 +106,17 @@ internal static class LifecycleTelemetryHooks
                 ctx.MessageType,
                 ctx.Message,
                 includeMessageContent,
+                ctx.Activity,
                 ctx.Exception);
             return Task.CompletedTask;
         });
 
         options.OnMessageDeserializeErrorHooks.AddFirst(ctx =>
         {
-            using var activity = MessageForgeActivitySource.Instance.StartActivity(
+            using var activity = StartLifecycleActivity(
                 "messageforge.message.deserialize_error",
-                ActivityKind.Consumer);
+                ActivityKind.Consumer,
+                ctx.Activity);
             SetMessageTags(activity, ctx.MessageType, ctx.Message, includeMessageContent);
             activity?.SetTag("messaging.message.delivery.count", ctx.DeliveryCount);
             activity?.SetTag("messaging.dead_letter", ctx.WillDeadLetter);
@@ -123,9 +126,10 @@ internal static class LifecycleTelemetryHooks
 
         options.OnMessageHandleErrorHooks.AddFirst(ctx =>
         {
-            using var activity = MessageForgeActivitySource.Instance.StartActivity(
+            using var activity = StartLifecycleActivity(
                 "messageforge.message.handle_error",
-                ActivityKind.Consumer);
+                ActivityKind.Consumer,
+                ctx.Activity);
             SetMessageTags(activity, ctx.MessageType, ctx.Message, includeMessageContent);
             activity?.SetTag("messaging.message.delivery.count", ctx.DeliveryCount);
             RecordException(activity, ctx.Exception);
@@ -134,9 +138,10 @@ internal static class LifecycleTelemetryHooks
 
         options.OnMessageRetryHooks.AddFirst(ctx =>
         {
-            using var activity = MessageForgeActivitySource.Instance.StartActivity(
+            using var activity = StartLifecycleActivity(
                 "messageforge.message.retry",
-                ActivityKind.Consumer);
+                ActivityKind.Consumer,
+                ctx.Activity);
             SetMessageTags(activity, ctx.MessageType, ctx.Message, includeMessageContent);
             activity?.SetTag("messaging.message.delivery.count", ctx.DeliveryCount);
             activity?.SetStatus(ActivityStatusCode.Ok);
@@ -145,15 +150,31 @@ internal static class LifecycleTelemetryHooks
 
         options.OnRetryLimitReachedHooks.AddFirst(ctx =>
         {
-            using var activity = MessageForgeActivitySource.Instance.StartActivity(
+            using var activity = StartLifecycleActivity(
                 "messageforge.message.retry_limit_reached",
-                ActivityKind.Consumer);
+                ActivityKind.Consumer,
+                ctx.Activity);
             SetMessageTags(activity, ctx.MessageType, ctx.Message, includeMessageContent);
             activity?.SetTag("messaging.message.delivery.count", ctx.DeliveryCount);
             activity?.SetTag("messaging.dead_letter", true);
             activity?.SetStatus(ActivityStatusCode.Error, "Retry limit reached.");
             return Task.CompletedTask;
         });
+    }
+
+    private static Activity? StartLifecycleActivity(
+        string name,
+        ActivityKind kind,
+        Activity? parent = null)
+    {
+        parent ??= Activity.Current;
+
+        if (parent is not null)
+        {
+            return MessageForgeActivitySource.Instance.StartActivity(name, kind, parent.Context);
+        }
+
+        return MessageForgeActivitySource.Instance.StartActivity(name, kind);
     }
 
     private static void SetMessageTypeTags(Activity? activity, Type messageType)
@@ -186,9 +207,10 @@ internal static class LifecycleTelemetryHooks
         Type messageType,
         object? message,
         bool includeMessageContent,
+        Activity? parent,
         Exception? exception)
     {
-        using var activity = MessageForgeActivitySource.Instance.StartActivity(name, ActivityKind.Internal);
+        using var activity = StartLifecycleActivity(name, ActivityKind.Internal, parent);
         SetMessageTags(activity, messageType, message, includeMessageContent);
         RecordException(activity, exception);
     }

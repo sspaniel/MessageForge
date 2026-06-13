@@ -130,6 +130,97 @@ public sealed class LifecycleTelemetryHookTests
     }
 
     [Test]
+    public async Task BeforeMessagePublish_Attaches_To_Existing_Activity_As_Child()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var parentSource = new ActivitySource("Test.Parent");
+
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+        };
+
+        ActivitySource.AddActivityListener(listener);
+
+        using var parentActivity = parentSource.StartActivity("parent.operation");
+        parentActivity.ShouldNotBeNull();
+
+        var context = new MessagePublishContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage(),
+            MessageType = typeof(TestSimpleMessage),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeMessagePublishHooks, context);
+
+        // assert
+        context.Activity.ShouldNotBeNull();
+        context.Activity!.ParentId.ShouldBe(parentActivity!.Id);
+    }
+
+    [Test]
+    public async Task Publish_Error_Hook_Attaches_To_In_Flight_Publish_Activity_As_Child()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        Activity? recordedActivity = null;
+
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => recordedActivity = activity,
+        };
+
+        ActivitySource.AddActivityListener(listener);
+
+        var publishContext = new MessagePublishContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage(),
+            MessageType = typeof(TestSimpleMessage),
+            CancellationToken = CancellationToken.None,
+        };
+
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeMessagePublishHooks, publishContext);
+        var publishActivity = publishContext.Activity;
+        publishActivity.ShouldNotBeNull();
+
+        var errorContext = new MessageErrorContext
+        {
+            ServiceProvider = serviceProvider,
+            MessageType = typeof(TestSimpleMessage),
+            Exception = new InvalidOperationException("publish failed"),
+            CancellationToken = CancellationToken.None,
+            Activity = publishActivity,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.OnMessagePublishErrorHooks, errorContext);
+
+        // assert
+        recordedActivity.ShouldNotBeNull();
+        recordedActivity!.ParentId.ShouldBe(publishActivity!.Id);
+    }
+
+    [Test]
     public async Task BeforeMessagePublish_Includes_Message_Body_When_Enabled()
     {
         // arrange

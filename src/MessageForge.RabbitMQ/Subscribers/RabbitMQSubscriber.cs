@@ -149,6 +149,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
         }
 
         object? message = null;
+        MessageHandleContext? handleContext = null;
 
         try
         {
@@ -160,7 +161,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
                 return;
             }
 
-            var handleContext = new MessageHandleContext
+            handleContext = new MessageHandleContext
             {
                 ServiceProvider = _serviceProvider,
                 Message = message,
@@ -258,6 +259,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
                 WillRetry = true,
                 WillDeadLetter = false,
                 CancellationToken = cancellationToken,
+                Activity = handleContext?.Activity,
             };
 
             await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.OnMessageHandleErrorHooks, errorContext);
