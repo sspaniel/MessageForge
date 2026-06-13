@@ -1,5 +1,4 @@
-﻿using MessageForge.Errors;
-using MessageForge.Publishers;
+﻿using MessageForge.Publishers;
 using MessageForge.RabbitMQ.ConnectionPools;
 using MessageForge.RabbitMQ.DependencyInjection;
 using MessageForge.RabbitMQ.Services;

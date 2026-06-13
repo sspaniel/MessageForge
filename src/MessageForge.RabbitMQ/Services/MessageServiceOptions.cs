@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using MessageForge.Persistence.Services;
 using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Subscribers;
@@ -16,6 +17,8 @@ public sealed class MessageServiceOptions
     internal int ConnectionPoolSize { get; set; } = Environment.ProcessorCount;
 
     internal PublisherOptions PublisherOptions { get; set; } = new PublisherOptions();
+
+    internal OutboxOptions? OutboxOptions { get; set; }
 
     internal ICollection<SubscriberOptions> SubscriberOptions { get; set; } = new LinkedList<SubscriberOptions>();
 
@@ -84,6 +87,18 @@ public sealed class MessageServiceOptions
     public void ConfigureMessagePublisher(Action<PublisherOptions> configure)
     {
         configure(PublisherOptions);
+    }
+
+    /// <summary>
+    /// Enables and configures the transactional outbox.
+    /// </summary>
+    /// <param name="configure">Action to configure the outbox options.</param>
+    public void ConfigureOutbox(Action<OutboxOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        OutboxOptions ??= new OutboxOptions();
+        configure(OutboxOptions);
     }
 
     /// <summary>
@@ -294,6 +309,11 @@ public sealed class MessageServiceOptions
         }
 
         PublisherOptions.Validate();
+
+        if (OutboxOptions != null)
+        {
+            OutboxOptions.Validate();
+        }
 
         foreach (var subscriberOptions in SubscriberOptions)
         {

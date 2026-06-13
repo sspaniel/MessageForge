@@ -55,6 +55,9 @@ jobs:
     - name: Pack MessageForge.RabbitMQ
       run: dotnet pack ./src/MessageForge.RabbitMQ/MessageForge.RabbitMQ.csproj -c Release -p:PackageVersion=$PACKAGE_VERSION --no-build --output ./pack
 
+    - name: Pack MessageForge.Persistence
+      run: dotnet pack ./src/MessageForge.Persistence/MessageForge.Persistence.csproj -c Release -p:PackageVersion=$PACKAGE_VERSION --no-build --output ./pack
+
     - name: NuGet login (OIDC → temp API key)
       uses: NuGet/login@v1
       id: login

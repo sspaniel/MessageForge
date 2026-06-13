@@ -29,13 +29,3 @@ jobs:
 
     - name: Test
       run: dotnet test ./src/MessageForge.slnx --no-build --verbosity normal
-
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v6
-      with:
-        name: build-artifacts
-        path: |
-          src/MessageForge/bin
-          src/MessageForge.RabbitMQ/bin
-          src/MessageForge.RabbitMQ.Tests/bin
-        if-no-files-found: error

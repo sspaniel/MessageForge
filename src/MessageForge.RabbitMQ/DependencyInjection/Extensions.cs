@@ -1,12 +1,13 @@
-﻿using MessageForge.Publishers;
+﻿using MessageForge.Persistence.DependencyInjection;
+using MessageForge.Persistence.Outbox;
+using MessageForge.Publishers;
 using MessageForge.RabbitMQ.ConnectionPools;
 using MessageForge.RabbitMQ.Lifecycle;
+using MessageForge.RabbitMQ.Outbox;
 using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Serializers;
 using MessageForge.RabbitMQ.Services;
 using Microsoft.Extensions.DependencyInjection;
-using OpenTelemetry;
-using OpenTelemetry.Trace;
 
 namespace MessageForge.RabbitMQ.DependencyInjection;
 
@@ -34,7 +35,16 @@ public static class Extensions
         services.AddSingleton(options);
         services.AddSingleton<IConnectionPool, ConnectionPool>();
         services.AddSingleton<IMessageSerializer, MessageSerializer>();
-        services.AddSingleton<IPublisher, Publisher>();
+
+        if (options.OutboxOptions is not null)
+        {
+            services.AddMessageForgeOutbox(options.OutboxOptions);
+            services.AddSingleton<IOutboxDispatcher, RabbitMqOutboxDispatcher>();
+        }
+        else
+        {
+            services.AddSingleton<IPublisher, Publisher>();
+        }
 
         foreach (var subscriberOptions in options.SubscriberOptions)
         {
