@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using MessageForge.Publishers;
 using MessageForge.RabbitMQ.ConnectionPools;
+using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Serializers;
 using MessageForge.RabbitMQ.Services;
 using Microsoft.Extensions.Logging;
@@ -11,17 +12,20 @@ namespace MessageForge.RabbitMQ.Publishers;
 internal sealed class Publisher : IPublisher
 {
     private readonly MessageServiceOptions _options;
+    private readonly IServiceProvider _serviceProvider;
     private readonly IConnectionPool _connectionPool;
     private readonly IMessageSerializer _messageSerializer;
     private readonly ILogger<Publisher> _logger;
 
     public Publisher(
         MessageServiceOptions options,
+        IServiceProvider serviceProvider,
         IConnectionPool connectionPool,
         IMessageSerializer messageSerializer,
         ILogger<Publisher> logger)
     {
         _options = options;
+        _serviceProvider = serviceProvider;
         _connectionPool = connectionPool;
         _messageSerializer = messageSerializer;
         _logger = logger;
@@ -33,6 +37,16 @@ internal sealed class Publisher : IPublisher
     {
         try
         {
+            var publishContext = new MessagePublishContext
+            {
+                ServiceProvider = _serviceProvider,
+                Message = message!,
+                MessageType = typeof(TMessage),
+                CancellationToken = cancellationToken,
+            };
+
+            await MessageServiceOptions.InvokeHooksAsync(_options.BeforeMessagePublishHooks, publishContext);
+
             var connection = _connectionPool.GetConnection();
 
             var channelOptions = new CreateChannelOptions(
@@ -52,6 +66,8 @@ internal sealed class Publisher : IPublisher
                 body: jsonBytes,
                 basicProperties: new BasicProperties { Type = messageType, Persistent = true },
                 cancellationToken: cancellationToken);
+
+            await MessageServiceOptions.InvokeHooksAsync(_options.AfterMessagePublishedHooks, publishContext);
         }
         catch (JsonException error)
         {

@@ -1,5 +1,6 @@
 ﻿using MessageForge.RabbitMQ.ConnectionPools;
 using MessageForge.RabbitMQ.Helpers;
+using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Subscribers;
 using Microsoft.Extensions.Hosting;
 
@@ -33,6 +34,14 @@ internal sealed class MessageService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        var context = new MessageServiceContext
+        {
+            ServiceProvider = _serviceProvider,
+            CancellationToken = cancellationToken,
+        };
+
+        await MessageServiceOptions.InvokeHooksAsync(_options.BeforeMessageServiceStartHooks, context);
+
         var statupConnection = _connectionPool.GetConnection();
         using var startupChannel = await statupConnection.CreateChannelAsync(cancellationToken: cancellationToken);
         await RabbitMQHelper.CreateDefaultExchangesAsync(startupChannel, cancellationToken);
@@ -49,6 +58,8 @@ internal sealed class MessageService : IHostedService
             await subscriber.InitializeAsync(cancellationToken);
             await subscriber.StartAsync(cancellationToken);
         }
+
+        await MessageServiceOptions.InvokeHooksAsync(_options.AfterMessageServiceStartedHooks, context);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)

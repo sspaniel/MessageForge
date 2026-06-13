@@ -2,6 +2,7 @@
 using System.Text.Json;
 using MessageForge.Errors;
 using MessageForge.RabbitMQ.ConnectionPools;
+using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Serializers;
 using MessageForge.RabbitMQ.Services;
 using MessageForge.Subscribers;
@@ -15,6 +16,7 @@ namespace MessageForge.RabbitMQ.Subscribers;
 internal class RabbitMQSubscriber : IRabbitMQSubscriber
 {
     private readonly SubscriberOptions _options;
+    private readonly MessageServiceOptions _messageServiceOptions;
     private readonly IConnectionPool _connectionPool;
     private readonly IMessageSerializer _messageSerializer;
     private readonly IServiceProvider _serviceProvider;
@@ -28,6 +30,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
     {
         _options = options;
         _serviceProvider = serviceProvider;
+        _messageServiceOptions = serviceProvider.GetRequiredService<MessageServiceOptions>();
         _connectionPool = serviceProvider.GetRequiredService<IConnectionPool>();
         _messageSerializer = serviceProvider.GetRequiredService<IMessageSerializer>();
         _logger = serviceProvider.GetRequiredService<ILogger<RabbitMQSubscriber>>();
@@ -146,6 +149,17 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
                 return;
             }
 
+            var handleContext = new MessageHandleContext
+            {
+                ServiceProvider = _serviceProvider,
+                Message = message,
+                MessageType = _options.MessageType,
+                DeliveryCount = deliveryCount,
+                CancellationToken = cancellationToken,
+            };
+
+            await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.BeforeMessageHandleHooks, handleContext);
+
             using var scope = _serviceProvider.CreateScope();
             var subscriber = scope.ServiceProvider.GetRequiredService(_options.SubscriberType);
 
@@ -175,6 +189,17 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
             }
 
             await _channel.BasicAckAsync(eventArgs.DeliveryTag, multiple: false, cancellationToken);
+
+            handleContext = new MessageHandleContext
+            {
+                ServiceProvider = scope.ServiceProvider,
+                Message = message,
+                MessageType = _options.MessageType,
+                DeliveryCount = deliveryCount,
+                CancellationToken = cancellationToken,
+            };
+
+            await MessageServiceOptions.InvokeHooksAsync(_messageServiceOptions.AfterMessageHandledHooks, handleContext);
         }
         catch (JsonException error)
         {

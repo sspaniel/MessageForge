@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Subscribers;
 using MessageForge.Subscribers;
@@ -17,6 +18,18 @@ public sealed class MessageServiceOptions
     internal PublisherOptions PublisherOptions { get; set; } = new PublisherOptions();
 
     internal ICollection<SubscriberOptions> SubscriberOptions { get; set; } = new LinkedList<SubscriberOptions>();
+
+    internal LinkedList<Func<MessageServiceContext, Task>> BeforeMessageServiceStartHooks { get; } = new();
+
+    internal LinkedList<Func<MessageServiceContext, Task>> AfterMessageServiceStartedHooks { get; } = new();
+
+    internal LinkedList<Func<MessagePublishContext, Task>> BeforeMessagePublishHooks { get; } = new();
+
+    internal LinkedList<Func<MessagePublishContext, Task>> AfterMessagePublishedHooks { get; } = new();
+
+    internal LinkedList<Func<MessageHandleContext, Task>> BeforeMessageHandleHooks { get; } = new();
+
+    internal LinkedList<Func<MessageHandleContext, Task>> AfterMessageHandledHooks { get; } = new();
 
     /// <summary>
     /// Sets the connection string.
@@ -43,6 +56,72 @@ public sealed class MessageServiceOptions
     public void ConfigureMessagePublisher(Action<PublisherOptions> configure)
     {
         configure(PublisherOptions);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before the message service starts.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeMessageServiceStart(Func<MessageServiceContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        BeforeMessageServiceStartHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after the message service has started.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterMessageServiceStarted(Func<MessageServiceContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        AfterMessageServiceStartedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before a message is published.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeMessagePublish(Func<MessagePublishContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        BeforeMessagePublishHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after a message has been published.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterMessagePublished(Func<MessagePublishContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        AfterMessagePublishedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before a message is handled.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeMessageHandle(Func<MessageHandleContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        BeforeMessageHandleHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after a message has been handled.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterMessageHandled(Func<MessageHandleContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        AfterMessageHandledHooks.AddLast(hook);
     }
 
     /// <summary>
@@ -115,6 +194,16 @@ public sealed class MessageServiceOptions
         subscriberType.GetInterfaces()
             .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ISubscriber<>))
             .Select(i => i.GenericTypeArguments[0]);
+
+    internal static async Task InvokeHooksAsync<TContext>(
+        IEnumerable<Func<TContext, Task>> hooks,
+        TContext context)
+    {
+        foreach (var hook in hooks)
+        {
+            await hook(context);
+        }
+    }
 
     private void AddSubscriber(Type subscriberType, Action<SubscriberOptions> configure)
     {
