@@ -38,6 +38,7 @@ public sealed class PublisherSerializerTests
     {
         _throwProvider.GetRequiredService<IConnectionPool>().Dispose();
         _ignoreProvider.GetRequiredService<IConnectionPool>().Dispose();
+
         await _throwProvider.DisposeAsync();
         await _ignoreProvider.DisposeAsync();
     }

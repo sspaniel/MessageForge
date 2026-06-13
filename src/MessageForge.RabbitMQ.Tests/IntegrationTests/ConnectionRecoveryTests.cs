@@ -61,7 +61,9 @@ public sealed class ConnectionRecoveryTests
     {
         // arrange: confirm delivery works before the outage
         var beforeOutage = new RecoveryMessage { Guid = Guid.NewGuid() };
+
         await _publisher.PublishAsync(beforeOutage);
+
         (await RabbitMqTestHelpers.WaitForAsync(
             () => RecoverySubscriber.Received.Contains(beforeOutage.Guid),
             TimeSpan.FromSeconds(15))).ShouldBeTrue();

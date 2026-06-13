@@ -16,6 +16,7 @@ public sealed class MessageSerializerTests
     {
         // arrange
         var serializer = new MessageSerializer();
+
         var original = new TestComplexMessage
         {
             Guid = Guid.NewGuid(),

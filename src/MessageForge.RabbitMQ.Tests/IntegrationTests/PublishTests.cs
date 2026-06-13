@@ -78,9 +78,9 @@ public sealed class PublishTests
     private async Task WaitForMessagesAsync(Func<int> getMessageCount, int expectedCount, TimeSpan? timeout = null)
     {
         timeout ??= TimeSpan.FromSeconds(5);
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var stopWatch = System.Diagnostics.Stopwatch.StartNew();
 
-        while (getMessageCount() < expectedCount && sw.Elapsed < timeout)
+        while (getMessageCount() < expectedCount && stopWatch.Elapsed < timeout)
         {
             await Task.Delay(50);
         }

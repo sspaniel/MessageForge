@@ -89,6 +89,7 @@ public sealed class QueueConfigurationTests
         var messages = Enumerable.Range(0, 5)
             .Select(_ => new MaxLengthMessage { Guid = Guid.NewGuid() })
             .ToList();
+
         var expectedOverflow = messages.Count - MaxLength;
 
         // act

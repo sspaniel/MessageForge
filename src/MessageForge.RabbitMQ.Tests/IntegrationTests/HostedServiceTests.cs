@@ -28,6 +28,7 @@ public sealed class HostedServiceTests
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
             options.UseConnectionString(RabbitMqSharedFixture.ConnectionString);
+
             options.Subscribe<HostedSubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
         });
