@@ -35,31 +35,7 @@ public sealed class PublishTests
                     publisherOptions.OnSerializationException(PublisherSerializerExceptionBehavior.Ignore);
                 });
 
-                options.Subscribe<TestSubscriber, TestSimpleMessage>(subscriberOptions =>
-                {
-                    subscriberOptions.MaxMessageConcurrency((ushort)Environment.ProcessorCount);
-                    subscriberOptions.MessageTtl(TimeSpan.FromHours(1));
-                    subscriberOptions.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(100));
-                    subscriberOptions.OnSerializationException(SubscriberSerializerExceptionBehavior.DeadLetter);
-                });
-
-                options.Subscribe<TestSubscriber, TestComplexMessage>(subscriberOptions =>
-                {
-                    subscriberOptions.MaxMessageConcurrency((ushort)Environment.ProcessorCount);
-                    subscriberOptions.MessageTtl(TimeSpan.FromHours(1));
-                    subscriberOptions.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(100));
-                    subscriberOptions.OnSerializationException(SubscriberSerializerExceptionBehavior.DeadLetter);
-                });
-
-                options.Subscribe<TestSubscriber, TestExceptionMessage>(subscriberOptions =>
-                {
-                    subscriberOptions.MaxMessageConcurrency((ushort)Environment.ProcessorCount);
-                    subscriberOptions.MessageTtl(TimeSpan.FromHours(1));
-                    subscriberOptions.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(100));
-                    subscriberOptions.OnSerializationException(SubscriberSerializerExceptionBehavior.DeadLetter);
-                });
-
-                options.Subscribe<TestSubscriber, MessageForgeError>(subscriberOptions =>
+                options.Subscribe<TestSubscriber>(subscriberOptions =>
                 {
                     subscriberOptions.MaxMessageConcurrency((ushort)Environment.ProcessorCount);
                     subscriberOptions.MessageTtl(TimeSpan.FromHours(1));

@@ -1,4 +1,5 @@
-﻿using MessageForge.RabbitMQ.Publishers;
+﻿using System.Reflection;
+using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Subscribers;
 using MessageForge.Subscribers;
 
@@ -45,19 +46,36 @@ public sealed class MessageServiceOptions
     }
 
     /// <summary>
-    /// Adds a message subscriber to the service collection.
+    /// Adds a message subscriber to the service collection. The subscriber is registered for every
+    /// <see cref="ISubscriber{TMessage}"/> interface it implements, applying the same configured options to each.
     /// </summary>
     /// <typeparam name="TSubscriber">Type of subscriber.</typeparam>
-    /// <typeparam name="TMessage">Type of message.</typeparam>
     /// <param name="configure">Action to configure the subscriber options.</param>
-    public void Subscribe<TSubscriber, TMessage>(Action<SubscriberOptions> configure)
-        where TSubscriber : class, ISubscriber<TMessage>
-        where TMessage : new()
+    public void Subscribe<TSubscriber>(Action<SubscriberOptions> configure)
+        where TSubscriber : class
     {
-        var options = new SubscriberOptions(typeof(TSubscriber), typeof(TMessage));
-        configure(options);
+        AddSubscriber(typeof(TSubscriber), configure);
+    }
 
-        SubscriberOptions.Add(options);
+    /// <summary>
+    /// Scans the supplied assembly for every concrete <see cref="ISubscriber{TMessage}"/> implementation and registers
+    /// each one, applying the same configured options to every message type's registration.
+    /// </summary>
+    /// <param name="assembly">The assembly to scan for subscribers.</param>
+    /// <param name="configure">Action to configure the subscriber options.</param>
+    public void AddSubscribersFromAssembly(Assembly assembly, Action<SubscriberOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var subscriberTypes = assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract)
+            .Where(t => GetMessageTypes(t).Any());
+
+        foreach (var subscriberType in subscriberTypes)
+        {
+            AddSubscriber(subscriberType, configure);
+        }
     }
 
     /// <summary>
@@ -90,6 +108,29 @@ public sealed class MessageServiceOptions
             }
 
             subscriberOptions.Validate();
+        }
+    }
+
+    private static IEnumerable<Type> GetMessageTypes(Type subscriberType) =>
+        subscriberType.GetInterfaces()
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ISubscriber<>))
+            .Select(i => i.GenericTypeArguments[0]);
+
+    private void AddSubscriber(Type subscriberType, Action<SubscriberOptions> configure)
+    {
+        var messageTypes = GetMessageTypes(subscriberType).ToList();
+        if (messageTypes.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{subscriberType.FullName} does not implement ISubscriber<>.");
+        }
+
+        foreach (var messageType in messageTypes)
+        {
+            var options = new SubscriberOptions(subscriberType, messageType);
+            configure(options);
+
+            SubscriberOptions.Add(options);
         }
     }
 }

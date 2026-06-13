@@ -44,29 +44,32 @@ public sealed class ImmediateRejectSubscriber : ISubscriber<ImmediateRejectMessa
 }
 
 /// <summary>
-/// Used to verify malformed payloads never reach the handler regardless of serializer behavior.
+/// Used to verify malformed payloads never reach the handler when the dead-letter behavior is configured.
 /// </summary>
-public sealed class SerializerSubscriber :
-    ISubscriber<SerializerDeadLetterMessage>,
-    ISubscriber<SerializerIgnoreMessage>
+public sealed class SerializerDeadLetterSubscriber : ISubscriber<SerializerDeadLetterMessage>
 {
     private static int _deadLetterHandled;
-    private static int _ignoreHandled;
 
     public static int DeadLetterHandled => _deadLetterHandled;
 
-    public static int IgnoreHandled => _ignoreHandled;
-
-    public static void Reset()
-    {
-        Interlocked.Exchange(ref _deadLetterHandled, 0);
-        Interlocked.Exchange(ref _ignoreHandled, 0);
-    }
+    public static void Reset() => Interlocked.Exchange(ref _deadLetterHandled, 0);
 
     public async Task HandleAsync(SerializerDeadLetterMessage message, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _deadLetterHandled);
     }
+}
+
+/// <summary>
+/// Used to verify malformed payloads never reach the handler when the ignore behavior is configured.
+/// </summary>
+public sealed class SerializerIgnoreSubscriber : ISubscriber<SerializerIgnoreMessage>
+{
+    private static int _ignoreHandled;
+
+    public static int IgnoreHandled => _ignoreHandled;
+
+    public static void Reset() => Interlocked.Exchange(ref _ignoreHandled, 0);
 
     public async Task HandleAsync(SerializerIgnoreMessage message, CancellationToken cancellationToken)
     {

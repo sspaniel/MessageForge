@@ -20,13 +20,13 @@ public sealed class DeadLetterTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<DeadLetterSubscriber, DeadLetterMessage>(subscriber =>
+            options.Subscribe<DeadLetterSubscriber>(subscriber =>
             {
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50));
                 subscriber.OnSerializationException(SubscriberSerializerExceptionBehavior.DeadLetter);
             });
 
-            options.Subscribe<ImmediateRejectSubscriber, ImmediateRejectMessage>(subscriber =>
+            options.Subscribe<ImmediateRejectSubscriber>(subscriber =>
             {
                 subscriber.Retries(maxRetryCount: 0, retryDelay: TimeSpan.Zero);
                 subscriber.OnSerializationException(SubscriberSerializerExceptionBehavior.DeadLetter);

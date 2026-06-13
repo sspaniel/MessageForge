@@ -23,7 +23,7 @@ public sealed class SerializerRoundtripTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<SerializerRoundtripSubscriber, OptionalFieldsMessage>(subscriber =>
+            options.Subscribe<SerializerRoundtripSubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
         });
 

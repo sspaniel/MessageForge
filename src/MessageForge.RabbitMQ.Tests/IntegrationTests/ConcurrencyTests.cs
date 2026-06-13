@@ -22,7 +22,7 @@ public sealed class ConcurrencyTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<ConcurrencySubscriber, ConcurrencyMessage>(subscriber =>
+            options.Subscribe<ConcurrencySubscriber>(subscriber =>
             {
                 subscriber.MaxMessageConcurrency(MaxConcurrency);
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50));

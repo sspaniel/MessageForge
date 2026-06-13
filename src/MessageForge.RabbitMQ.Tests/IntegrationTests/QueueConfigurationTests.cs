@@ -25,13 +25,13 @@ public sealed class QueueConfigurationTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<TtlSubscriber, TtlMessage>(subscriber =>
+            options.Subscribe<TtlSubscriber>(subscriber =>
             {
                 subscriber.MessageTtl(TimeSpan.FromSeconds(2));
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50));
             });
 
-            options.Subscribe<MaxLengthSubscriber, MaxLengthMessage>(subscriber =>
+            options.Subscribe<MaxLengthSubscriber>(subscriber =>
             {
                 subscriber.MaxMessageCount(MaxLength);
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50));

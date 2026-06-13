@@ -159,7 +159,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
                 throw new MissingMethodException(_options.SubscriberType.FullName, "HandleAsync");
             }
 
-            var result = handleMethod.Invoke(subscriber, new object?[] { message, cancellationToken });
+            var result = handleMethod.Invoke(subscriber, [message, cancellationToken]);
 
             if (result is Task taskResult)
             {

@@ -19,7 +19,7 @@ public sealed class LifecycleTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<LifecycleSubscriber, LifecycleMessage>(subscriber =>
+            options.Subscribe<LifecycleSubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
         });
 

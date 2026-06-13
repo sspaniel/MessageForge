@@ -24,7 +24,7 @@ public sealed class ConnectionRecoveryTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<RecoverySubscriber, RecoveryMessage>(subscriber =>
+            options.Subscribe<RecoverySubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
         });
 

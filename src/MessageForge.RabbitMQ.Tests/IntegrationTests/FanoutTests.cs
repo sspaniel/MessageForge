@@ -19,10 +19,10 @@ public sealed class FanoutTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<FanoutSubscriberA, FanoutMessage>(subscriber =>
+            options.Subscribe<FanoutSubscriberA>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
 
-            options.Subscribe<FanoutSubscriberB, FanoutMessage>(subscriber =>
+            options.Subscribe<FanoutSubscriberB>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
         });
 

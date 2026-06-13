@@ -20,7 +20,7 @@ public sealed class EdgeCaseTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<NullMessageSubscriber, NullableMessage>(subscriber =>
+            options.Subscribe<NullMessageSubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
         });
 

@@ -19,13 +19,13 @@ public sealed class SubscriberSerializerTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<SerializerSubscriber, SerializerDeadLetterMessage>(subscriber =>
+            options.Subscribe<SerializerDeadLetterSubscriber>(subscriber =>
             {
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50));
                 subscriber.OnSerializationException(SubscriberSerializerExceptionBehavior.DeadLetter);
             });
 
-            options.Subscribe<SerializerSubscriber, SerializerIgnoreMessage>(subscriber =>
+            options.Subscribe<SerializerIgnoreSubscriber>(subscriber =>
             {
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50));
                 subscriber.OnSerializationException(SubscriberSerializerExceptionBehavior.Ignore);
@@ -56,7 +56,8 @@ public sealed class SubscriberSerializerTests
     [SetUp]
     public void TestSetUp()
     {
-        SerializerSubscriber.Reset();
+        SerializerDeadLetterSubscriber.Reset();
+        SerializerIgnoreSubscriber.Reset();
     }
 
     [Test]
@@ -78,7 +79,7 @@ public sealed class SubscriberSerializerTests
 
         // assert
         deadLettered.Count.ShouldBe(1);
-        SerializerSubscriber.DeadLetterHandled.ShouldBe(0);
+        SerializerDeadLetterSubscriber.DeadLetterHandled.ShouldBe(0);
     }
 
     [Test]
@@ -101,6 +102,6 @@ public sealed class SubscriberSerializerTests
 
         // assert
         deadLettered.Count.ShouldBe(0);
-        SerializerSubscriber.IgnoreHandled.ShouldBe(0);
+        SerializerIgnoreSubscriber.IgnoreHandled.ShouldBe(0);
     }
 }

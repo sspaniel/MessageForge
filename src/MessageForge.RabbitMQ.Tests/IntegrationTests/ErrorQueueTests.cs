@@ -25,10 +25,10 @@ public sealed class ErrorQueueTests
     {
         _serviceProvider = RabbitMqTestHelpers.BuildServiceProvider(options =>
         {
-            options.Subscribe<ErrorQueueSubscriber, ErrorQueueMessage>(subscriber =>
+            options.Subscribe<ErrorQueueSubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 1, retryDelay: TimeSpan.FromMilliseconds(50)));
 
-            options.Subscribe<NestedErrorSubscriber, NestedErrorMessage>(subscriber =>
+            options.Subscribe<NestedErrorSubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 1, retryDelay: TimeSpan.FromMilliseconds(50)));
         });
 
