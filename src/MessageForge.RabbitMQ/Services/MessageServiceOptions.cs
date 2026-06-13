@@ -47,18 +47,6 @@ public sealed class MessageServiceOptions
 
     internal LinkedList<Func<MessageErrorContext, Task>> OnRetryLimitReachedHooks { get; } = new();
 
-    internal LinkedList<Func<MessageSubscriberContext, Task>> BeforeSubscriberInitializeHooks { get; } = new();
-
-    internal LinkedList<Func<MessageSubscriberContext, Task>> AfterSubscriberInitializedHooks { get; } = new();
-
-    internal LinkedList<Func<MessageSubscriberContext, Task>> BeforeSubscriberStartHooks { get; } = new();
-
-    internal LinkedList<Func<MessageSubscriberContext, Task>> AfterSubscriberStartedHooks { get; } = new();
-
-    internal LinkedList<Func<MessageSubscriberContext, Task>> BeforeSubscriberStopHooks { get; } = new();
-
-    internal LinkedList<Func<MessageSubscriberContext, Task>> AfterSubscriberStoppedHooks { get; } = new();
-
     /// <summary>
     /// Sets the connection string.
     /// </summary>
@@ -241,72 +229,6 @@ public sealed class MessageServiceOptions
     }
 
     /// <summary>
-    /// Registers a hook invoked before a subscriber initializes its queue topology.
-    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
-    /// </summary>
-    /// <param name="hook">The hook to invoke.</param>
-    public void BeforeSubscriberInitialize(Func<MessageSubscriberContext, Task> hook)
-    {
-        ArgumentNullException.ThrowIfNull(hook);
-        BeforeSubscriberInitializeHooks.AddLast(hook);
-    }
-
-    /// <summary>
-    /// Registers a hook invoked after a subscriber has initialized its queue topology.
-    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
-    /// </summary>
-    /// <param name="hook">The hook to invoke.</param>
-    public void AfterSubscriberInitialized(Func<MessageSubscriberContext, Task> hook)
-    {
-        ArgumentNullException.ThrowIfNull(hook);
-        AfterSubscriberInitializedHooks.AddLast(hook);
-    }
-
-    /// <summary>
-    /// Registers a hook invoked before a subscriber starts consuming messages.
-    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
-    /// </summary>
-    /// <param name="hook">The hook to invoke.</param>
-    public void BeforeSubscriberStart(Func<MessageSubscriberContext, Task> hook)
-    {
-        ArgumentNullException.ThrowIfNull(hook);
-        BeforeSubscriberStartHooks.AddLast(hook);
-    }
-
-    /// <summary>
-    /// Registers a hook invoked after a subscriber has started consuming messages.
-    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
-    /// </summary>
-    /// <param name="hook">The hook to invoke.</param>
-    public void AfterSubscriberStarted(Func<MessageSubscriberContext, Task> hook)
-    {
-        ArgumentNullException.ThrowIfNull(hook);
-        AfterSubscriberStartedHooks.AddLast(hook);
-    }
-
-    /// <summary>
-    /// Registers a hook invoked before a subscriber stops consuming messages.
-    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
-    /// </summary>
-    /// <param name="hook">The hook to invoke.</param>
-    public void BeforeSubscriberStop(Func<MessageSubscriberContext, Task> hook)
-    {
-        ArgumentNullException.ThrowIfNull(hook);
-        BeforeSubscriberStopHooks.AddLast(hook);
-    }
-
-    /// <summary>
-    /// Registers a hook invoked after a subscriber has stopped consuming messages.
-    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
-    /// </summary>
-    /// <param name="hook">The hook to invoke.</param>
-    public void AfterSubscriberStopped(Func<MessageSubscriberContext, Task> hook)
-    {
-        ArgumentNullException.ThrowIfNull(hook);
-        AfterSubscriberStoppedHooks.AddLast(hook);
-    }
-
-    /// <summary>
     /// Adds a message subscriber to the service collection. The subscriber is registered for every
     /// <see cref="ISubscriber{TMessage}"/> interface it implements, applying the same configured options to each.
     /// </summary>
@@ -390,6 +312,7 @@ public sealed class MessageServiceOptions
     private void AddSubscriber(Type subscriberType, Action<SubscriberOptions> configure)
     {
         var messageTypes = GetMessageTypes(subscriberType).ToList();
+
         if (messageTypes.Count == 0)
         {
             throw new InvalidOperationException(

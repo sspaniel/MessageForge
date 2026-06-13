@@ -26,6 +26,11 @@ public sealed class MessageHandleContext
     public int DeliveryCount { get; init; }
 
     /// <summary>
+    /// Gets a value indicating whether <c>HandleAsync</c> did not return <see cref="Task"/> or <see cref="ValueTask"/>.
+    /// </summary>
+    public bool HandleAsyncReturnedUnexpectedType { get; init; }
+
+    /// <summary>
     /// Gets the <see cref="CancellationToken"/> for the current operation.
     /// </summary>
     public CancellationToken CancellationToken { get; init; }

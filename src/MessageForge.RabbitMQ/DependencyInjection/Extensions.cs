@@ -1,5 +1,6 @@
 ﻿using MessageForge.Publishers;
 using MessageForge.RabbitMQ.ConnectionPools;
+using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Serializers;
 using MessageForge.RabbitMQ.Services;
@@ -21,6 +22,7 @@ public static class Extensions
     {
         var options = new MessageServiceOptions();
         configure(options);
+        LifecycleLoggingHooks.Register(options);
         options.Validate();
 
         services.AddSingleton(options);
