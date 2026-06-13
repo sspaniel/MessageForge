@@ -16,10 +16,10 @@ public static class Extensions
     /// Adds MessageForge RabbitMq messaging to the service collection.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">Action to configure <see cref="MessagingServiceOptions"/>.</param>
-    public static void AddMessageForgeRabbitMQ(this IServiceCollection services, Action<MessagingServiceOptions> configure)
+    /// <param name="configure">Action to configure <see cref="MessageServiceOptions"/>.</param>
+    public static void AddMessageForgeRabbitMQ(this IServiceCollection services, Action<MessageServiceOptions> configure)
     {
-        var options = new MessagingServiceOptions();
+        var options = new MessageServiceOptions();
         configure(options);
         options.Validate();
 
@@ -35,7 +35,7 @@ public static class Extensions
 
         if (options.SubscriberOptions.Any())
         {
-            services.AddHostedService<MessagingService>();
+            services.AddHostedService<MessageService>();
         }
     }
 }

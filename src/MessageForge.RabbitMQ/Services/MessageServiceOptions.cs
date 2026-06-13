@@ -7,7 +7,7 @@ namespace MessageForge.RabbitMQ.Services;
 /// <summary>
 /// Options for RabbitMq messaging.
 /// </summary>
-public sealed class MessagingServiceOptions
+public sealed class MessageServiceOptions
 {
     internal string ConnectionString { get; set; } = string.Empty;
 

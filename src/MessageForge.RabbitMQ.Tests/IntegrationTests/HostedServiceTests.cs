@@ -10,7 +10,7 @@ namespace MessageForge.RabbitMQ.Tests.IntegrationTests;
 
 /// <summary>
 /// Exercises the real production wiring: registration through <c>AddMessageForgeRabbitMq</c> and startup of the
-/// hosted <c>MessagingService</c> through an <see cref="IHost"/> (rather than constructing it manually).
+/// hosted <c>MessageService</c> through an <see cref="IHost"/> (rather than constructing it manually).
 /// </summary>
 public sealed class HostedServiceTests
 {
@@ -70,7 +70,7 @@ public sealed class HostedServiceTests
         var hostedServices = provider.GetServices<IHostedService>();
 
         // assert
-        hostedServices.ShouldContain(service => service is MessagingService);
+        hostedServices.ShouldContain(service => service is MessageService);
     }
 
     [Test]
@@ -83,6 +83,6 @@ public sealed class HostedServiceTests
         var hostedServices = provider.GetServices<IHostedService>();
 
         // assert
-        hostedServices.ShouldNotContain(service => service is MessagingService);
+        hostedServices.ShouldNotContain(service => service is MessageService);
     }
 }

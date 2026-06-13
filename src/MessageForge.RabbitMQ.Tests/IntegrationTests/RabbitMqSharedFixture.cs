@@ -56,7 +56,7 @@ public sealed class RabbitMqSharedFixture
 /// </summary>
 public static class RabbitMqTestHelpers
 {
-    public static ServiceProvider BuildServiceProvider(Action<MessagingServiceOptions> configure)
+    public static ServiceProvider BuildServiceProvider(Action<MessageServiceOptions> configure)
     {
         var services = new ServiceCollection();
 
@@ -117,7 +117,7 @@ public static class RabbitMqTestHelpers
         Func<string, bool> predicate,
         int expectedCount,
         TimeSpan? timeout = null)
-        => DrainMatchingAsync(connection, MessagingService.DeadLetterQueueName, predicate, expectedCount, timeout);
+        => DrainMatchingAsync(connection, MessageService.DeadLetterQueueName, predicate, expectedCount, timeout);
 
     public static async Task<List<string>> DrainMatchingAsync(
         IConnection connection,

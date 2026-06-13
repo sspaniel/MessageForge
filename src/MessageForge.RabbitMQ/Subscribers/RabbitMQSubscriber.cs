@@ -51,8 +51,8 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
 
         var queueOptions = new Dictionary<string, object?>
         {
-            { "x-dead-letter-exchange", MessagingService.DeadLetterExchangeName },
-            { "x-dead-letter-routing-key", MessagingService.DeadLetterQueueName },
+            { "x-dead-letter-exchange", MessageService.DeadLetterExchangeName },
+            { "x-dead-letter-routing-key", MessageService.DeadLetterQueueName },
             { "x-queue-type", "quorum" },
         };
 

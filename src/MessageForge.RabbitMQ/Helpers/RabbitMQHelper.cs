@@ -8,7 +8,7 @@ internal static class RabbitMQHelper
 {
     public static readonly Dictionary<string, object?> DefaultQueueArgs = new Dictionary<string, object?>
     {
-        { "x-dead-letter-exchange", MessagingService.DeadLetterExchangeName },
+        { "x-dead-letter-exchange", MessageService.DeadLetterExchangeName },
         { "x-queue-type", "quorum" },
     };
 
@@ -22,7 +22,7 @@ internal static class RabbitMQHelper
             cancellationToken: cancellationToken);
 
         await channel.ExchangeDeclareAsync(
-            exchange: MessagingService.DeadLetterExchangeName,
+            exchange: MessageService.DeadLetterExchangeName,
             type: ExchangeType.Fanout,
             durable: true,
             autoDelete: false,
@@ -32,7 +32,7 @@ internal static class RabbitMQHelper
     public static async Task CreateDefaultQueuesAsync(IChannel channel, CancellationToken cancellationToken)
     {
         await channel.QueueDeclareAsync(
-            queue: MessagingService.DeadLetterQueueName,
+            queue: MessageService.DeadLetterQueueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
@@ -40,7 +40,7 @@ internal static class RabbitMQHelper
             cancellationToken: cancellationToken);
 
         await channel.QueueDeclareAsync(
-            queue: MessagingService.ErrorQueueName,
+            queue: MessageService.ErrorQueueName,
             durable: true,
             exclusive: false,
             autoDelete: false,
@@ -48,13 +48,13 @@ internal static class RabbitMQHelper
             cancellationToken: cancellationToken);
 
         await channel.QueueBindAsync(
-            queue: MessagingService.DeadLetterQueueName,
-            exchange: MessagingService.DeadLetterExchangeName,
+            queue: MessageService.DeadLetterQueueName,
+            exchange: MessageService.DeadLetterExchangeName,
             routingKey: string.Empty,
             cancellationToken: cancellationToken);
 
         await channel.QueueBindAsync(
-            queue: MessagingService.ErrorQueueName,
+            queue: MessageService.ErrorQueueName,
             exchange: typeof(MessageForgeError).FullName ?? throw new ArgumentNullException(nameof(MessageForgeError)),
             routingKey: string.Empty,
             cancellationToken: cancellationToken);

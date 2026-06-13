@@ -10,13 +10,13 @@ namespace MessageForge.RabbitMQ.Publishers;
 
 internal sealed class Publisher : IPublisher
 {
-    private readonly MessagingServiceOptions _options;
+    private readonly MessageServiceOptions _options;
     private readonly IConnectionPool _connectionPool;
     private readonly IMessageSerializer _messageSerializer;
     private readonly ILogger<Publisher> _logger;
 
     public Publisher(
-        MessagingServiceOptions options,
+        MessageServiceOptions options,
         IConnectionPool connectionPool,
         IMessageSerializer messageSerializer,
         ILogger<Publisher> logger)

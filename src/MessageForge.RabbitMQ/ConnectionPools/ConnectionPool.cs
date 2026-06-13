@@ -10,9 +10,9 @@ namespace MessageForge.RabbitMQ.ConnectionPools;
 /// Initializes a new instance of the <see cref="ConnectionPool"/> class.
 /// </remarks>
 /// <param name="options">The messaging options to configure the connection pool.</param>
-public class ConnectionPool(MessagingServiceOptions options) : IConnectionPool
+public class ConnectionPool(MessageServiceOptions options) : IConnectionPool
 {
-    private readonly MessagingServiceOptions _options = options;
+    private readonly MessageServiceOptions _options = options;
     private readonly Queue<IConnection> _connections = new Queue<IConnection>();
 
     /// <summary>

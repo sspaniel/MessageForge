@@ -14,8 +14,8 @@ public sealed class PublishTests
 {
     private IServiceScope _serviceScope = null!;
     private IPublisher _messagePublisher = null!;
-    private MessagingServiceOptions _messagingOptions = null!;
-    private MessagingService _messagingService = null!;
+    private MessageServiceOptions _messageOptions = null!;
+    private MessageService _messageService = null!;
     private IConnectionPool _connectionPool = null!;
 
     [OneTimeSetUp]
@@ -72,10 +72,10 @@ public sealed class PublishTests
 
         _serviceScope = serviceProvider.CreateScope();
         _messagePublisher = _serviceScope.ServiceProvider.GetRequiredService<IPublisher>();
-        _messagingOptions = _serviceScope.ServiceProvider.GetRequiredService<MessagingServiceOptions>();
+        _messageOptions = _serviceScope.ServiceProvider.GetRequiredService<MessageServiceOptions>();
         _connectionPool = _serviceScope.ServiceProvider.GetRequiredService<IConnectionPool>();
-        _messagingService = new MessagingService(_serviceScope.ServiceProvider, _messagingOptions, _connectionPool);
-        await _messagingService.StartAsync(CancellationToken.None);
+        _messageService = new MessageService(_serviceScope.ServiceProvider, _messageOptions, _connectionPool);
+        await _messageService.StartAsync(CancellationToken.None);
     }
 
     [OneTimeTearDown]
@@ -83,7 +83,7 @@ public sealed class PublishTests
     {
         try
         {
-            await _messagingService.StopAsync(CancellationToken.None);
+            await _messageService.StopAsync(CancellationToken.None);
         }
         catch { }
 

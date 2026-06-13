@@ -7,9 +7,9 @@ namespace MessageForge.RabbitMQ.Tests.IntegrationTests;
 
 public sealed class ConnectionPoolTests
 {
-    private static MessagingServiceOptions BuildOptions(int poolSize)
+    private static MessageServiceOptions BuildOptions(int poolSize)
     {
-        var options = new MessagingServiceOptions();
+        var options = new MessageServiceOptions();
         options.UseConnectionString(RabbitMqSharedFixture.ConnectionString);
         options.UseConnectionPoolSize(poolSize);
         return options;

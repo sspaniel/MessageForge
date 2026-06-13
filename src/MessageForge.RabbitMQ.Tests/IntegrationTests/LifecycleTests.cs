@@ -10,7 +10,7 @@ namespace MessageForge.RabbitMQ.Tests.IntegrationTests;
 public sealed class LifecycleTests
 {
     private ServiceProvider _serviceProvider = null!;
-    private MessagingServiceOptions _options = null!;
+    private MessageServiceOptions _options = null!;
     private IPublisher _publisher = null!;
     private IConnectionPool _connectionPool = null!;
 
@@ -25,7 +25,7 @@ public sealed class LifecycleTests
 
         _publisher = _serviceProvider.GetRequiredService<IPublisher>();
         _connectionPool = _serviceProvider.GetRequiredService<IConnectionPool>();
-        _options = _serviceProvider.GetRequiredService<MessagingServiceOptions>();
+        _options = _serviceProvider.GetRequiredService<MessageServiceOptions>();
     }
 
     [OneTimeTearDown]
@@ -45,7 +45,7 @@ public sealed class LifecycleTests
     public async Task Message_Published_While_Stopped_Is_Delivered_After_Restart()
     {
         // arrange: declare topology then stop the consumer
-        var initialService = new MessagingService(_serviceProvider, _options, _connectionPool);
+        var initialService = new MessageService(_serviceProvider, _options, _connectionPool);
         await initialService.StartAsync(CancellationToken.None);
         await initialService.StopAsync(CancellationToken.None);
 
@@ -56,7 +56,7 @@ public sealed class LifecycleTests
 
         LifecycleSubscriber.Received.ShouldNotContain(message.Guid);
 
-        var restartedService = new MessagingService(_serviceProvider, _options, _connectionPool);
+        var restartedService = new MessageService(_serviceProvider, _options, _connectionPool);
         await restartedService.StartAsync(CancellationToken.None);
 
         try

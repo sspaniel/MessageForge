@@ -14,7 +14,7 @@ namespace MessageForge.RabbitMQ.Tests.IntegrationTests;
 public sealed class SerializerRoundtripTests
 {
     private ServiceProvider _serviceProvider = null!;
-    private MessagingService _messagingService = null!;
+    private MessageService _messageService = null!;
     private IPublisher _publisher = null!;
     private IConnectionPool _connectionPool = null!;
 
@@ -29,9 +29,9 @@ public sealed class SerializerRoundtripTests
 
         _publisher = _serviceProvider.GetRequiredService<IPublisher>();
         _connectionPool = _serviceProvider.GetRequiredService<IConnectionPool>();
-        var options = _serviceProvider.GetRequiredService<MessagingServiceOptions>();
-        _messagingService = new MessagingService(_serviceProvider, options, _connectionPool);
-        await _messagingService.StartAsync(CancellationToken.None);
+        var options = _serviceProvider.GetRequiredService<MessageServiceOptions>();
+        _messageService = new MessageService(_serviceProvider, options, _connectionPool);
+        await _messageService.StartAsync(CancellationToken.None);
     }
 
     [OneTimeTearDown]
@@ -39,7 +39,7 @@ public sealed class SerializerRoundtripTests
     {
         try
         {
-            await _messagingService.StopAsync(CancellationToken.None);
+            await _messageService.StopAsync(CancellationToken.None);
         }
         catch
         {
