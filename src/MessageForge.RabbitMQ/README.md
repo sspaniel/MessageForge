@@ -1,6 +1,6 @@
 # MessageForge.RabbitMQ
 
-RabbitMQ integration for [MessageForge](https://github.com/sspaniel/MessageForge). Publish and subscribe to messages using a fanout exchange per message type, with connection pooling, automatic queue provisioning, retries, dead-lettering, and OpenTelemetry tracing.
+RabbitMQ integration for MessageForge. Publish and subscribe to messages using a fanout exchange per message type, with connection pooling, automatic queue provisioning, retries, dead-lettering, and OpenTelemetry tracing.
 
 ## Requirements
 
