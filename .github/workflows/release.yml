@@ -8,7 +8,7 @@ on:
       major:
         description: Major version
         required: true
-        default: '0'
+        default: '1'
         type: string
       minor:
         description: Minor version
