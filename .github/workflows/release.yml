@@ -1,0 +1,65 @@
+# Builds, packs, and publishes MessageForge NuGet packages.
+
+name: MessageForge Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      major:
+        description: Major version
+        required: true
+        default: '1'
+        type: string
+      minor:
+        description: Minor version
+        required: true
+        default: '0'
+        type: string
+      prerelease:
+        description: Publish as prerelease
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  build-pack-push:
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PACKAGE_VERSION: ${{ inputs.prerelease && format('{0}.{1}.{2}-prerelease', inputs.major, inputs.minor, github.run_number) || format('{0}.{1}.{2}', inputs.major, inputs.minor, github.run_number) }}
+
+    steps:
+    - uses: actions/checkout@v6
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Restore
+      run: dotnet restore ./src/MessageForge.slnx
+
+    - name: Build
+      run: dotnet build ./src/MessageForge.slnx -c Release --no-restore
+
+    - name: Test
+      run: dotnet test ./src/MessageForge.slnx -c Release --no-build --verbosity normal
+
+    - name: Pack MessageForge
+      run: dotnet pack ./src/MessageForge/MessageForge.csproj -c Release -p:PackageVersion=$PACKAGE_VERSION --no-build --output ./pack
+
+    - name: Pack MessageForge.RabbitMQ
+      run: dotnet pack ./src/MessageForge.RabbitMQ/MessageForge.RabbitMQ.csproj -c Release -p:PackageVersion=$PACKAGE_VERSION --no-build --output ./pack
+
+    - name: NuGet login (OIDC → temp API key)
+      uses: NuGet/login@v1
+      id: login
+      with:
+        user: ${{ secrets.NUGET_USER }}
+
+    - name: Push
+      run: dotnet nuget push ./pack/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
