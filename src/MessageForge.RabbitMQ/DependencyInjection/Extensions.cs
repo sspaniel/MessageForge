@@ -38,6 +38,7 @@ public static class Extensions
 
         if (options.OutboxOptions is not null)
         {
+            options.OutboxOptions.SerializerExceptionBehavior = options.PublisherOptions.SerializerExceptionBehavior;
             services.AddMessageForgeOutbox(options.OutboxOptions);
             services.AddSingleton<IOutboxDispatcher, RabbitMqOutboxDispatcher>();
         }

@@ -1,3 +1,5 @@
+using MessageForge.Persistence.Outbox;
+using MessageForge.Persistence.Services;
 using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Services;
 using MessageForge.RabbitMQ.Subscribers;
@@ -140,6 +142,72 @@ internal static class LifecycleLoggingHooks
                 "Retry limit reached for message of type {MessageType} (delivery count {DeliveryCount}).",
                 ctx.MessageType.Name,
                 ctx.DeliveryCount);
+            return Task.CompletedTask;
+        });
+
+        if (options.OutboxOptions is not null)
+        {
+            RegisterOutbox(options);
+        }
+    }
+
+    private static void RegisterOutbox(MessageServiceOptions options)
+    {
+        options.BeforeOutboxEnqueueHooks.AddFirst(ctx =>
+        {
+            var logger = ctx.ServiceProvider.GetRequiredService<ILogger<OutboxPublisher>>();
+            logger.LogInformation("Enqueuing message of type {MessageType} to outbox.", ctx.MessageType.Name);
+            return Task.CompletedTask;
+        });
+
+        options.AfterOutboxEnqueuedHooks.AddFirst(ctx =>
+        {
+            var logger = ctx.ServiceProvider.GetRequiredService<ILogger<OutboxPublisher>>();
+            logger.LogInformation(
+                "Enqueued message of type {MessageType} to outbox (outbox message id {OutboxMessageId}).",
+                ctx.MessageType.Name,
+                ctx.OutboxMessageId);
+            return Task.CompletedTask;
+        });
+
+        options.OnOutboxSerializeErrorHooks.AddFirst(ctx =>
+        {
+            var logger = ctx.ServiceProvider.GetRequiredService<ILogger<OutboxPublisher>>();
+            logger.LogError(
+                ctx.Exception,
+                "Error serializing message of type {MessageType} for outbox enqueue.",
+                ctx.MessageType.Name);
+            return Task.CompletedTask;
+        });
+
+        options.BeforeOutboxDispatchHooks.AddFirst(ctx =>
+        {
+            var logger = ctx.ServiceProvider.GetRequiredService<ILogger<OutboxService>>();
+            logger.LogInformation(
+                "Dispatching outbox message {OutboxMessageId} of type {MessageType}.",
+                ctx.OutboxMessageId,
+                ctx.MessageType);
+            return Task.CompletedTask;
+        });
+
+        options.AfterOutboxDispatchedHooks.AddFirst(ctx =>
+        {
+            var logger = ctx.ServiceProvider.GetRequiredService<ILogger<OutboxService>>();
+            logger.LogInformation(
+                "Dispatched outbox message {OutboxMessageId} of type {MessageType}.",
+                ctx.OutboxMessageId,
+                ctx.MessageType);
+            return Task.CompletedTask;
+        });
+
+        options.OnOutboxDispatchErrorHooks.AddFirst(ctx =>
+        {
+            var logger = ctx.ServiceProvider.GetRequiredService<ILogger<OutboxService>>();
+            logger.LogError(
+                ctx.Exception,
+                "Failed to dispatch outbox message {OutboxMessageId} of type {MessageType}.",
+                ctx.OutboxMessageId,
+                ctx.DispatchedMessageType ?? ctx.MessageType.Name);
             return Task.CompletedTask;
         });
     }

@@ -1,4 +1,5 @@
 using System.Reflection;
+using MessageForge.Persistence.Outbox.Lifecycle;
 using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Services;
 using MessageForge.RabbitMQ.Tests.TestObjects;
@@ -107,6 +108,46 @@ public sealed class LifecycleHookTests
 
         // assert
         GetHookCount(options, hooksPropertyName).ShouldBe(3);
+        invocationOrder.ShouldBe([1, 2, 3]);
+    }
+
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks))]
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxDispatchHooks))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxDispatchedHooks))]
+    public async Task Outbox_Lifecycle_Hooks_Are_Appended_And_Invoked_In_Fifo_Order(string hooksPropertyName)
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        var invocationOrder = new List<int>();
+
+        RegisterOutboxHooks(options, hooksPropertyName, invocationOrder, 1, 2, 3);
+
+        // act
+        await InvokeOutboxHooksAsync(options, hooksPropertyName);
+
+        // assert
+        GetOutboxHookCount(options, hooksPropertyName).ShouldBe(3);
+        invocationOrder.ShouldBe([1, 2, 3]);
+    }
+
+    [TestCase(nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks))]
+    [TestCase(nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks))]
+    public async Task Outbox_Error_Hooks_Are_Appended_And_Invoked_In_Fifo_Order(string hooksPropertyName)
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        var invocationOrder = new List<int>();
+
+        RegisterOutboxErrorHooks(options, hooksPropertyName, invocationOrder, 1, 2, 3);
+
+        // act
+        await InvokeOutboxErrorHooksAsync(options, hooksPropertyName);
+
+        // assert
+        GetOutboxHookCount(options, hooksPropertyName).ShouldBe(3);
         invocationOrder.ShouldBe([1, 2, 3]);
     }
 
@@ -289,10 +330,23 @@ public sealed class LifecycleHookTests
     [TestCase(nameof(MessageServiceOptions.OnMessageSerializeError))]
     [TestCase(nameof(MessageServiceOptions.OnMessageRetry))]
     [TestCase(nameof(MessageServiceOptions.OnRetryLimitReached))]
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxEnqueue))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxEnqueued))]
+    [TestCase(nameof(MessageServiceOptions.OnOutboxSerializeError))]
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxDispatch))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxDispatched))]
+    [TestCase(nameof(MessageServiceOptions.OnOutboxDispatchError))]
     public void Lifecycle_Hook_Registration_Throws_When_Hook_Is_Null(string methodName)
     {
         // arrange
         var options = new MessageServiceOptions();
+        if (methodName.StartsWith("BeforeOutbox", StringComparison.Ordinal)
+            || methodName.StartsWith("AfterOutbox", StringComparison.Ordinal)
+            || methodName.StartsWith("OnOutbox", StringComparison.Ordinal))
+        {
+            options.ConfigureOutbox(_ => { });
+        }
+
         var method = typeof(MessageServiceOptions).GetMethod(methodName)!;
 
         // act / assert
@@ -526,6 +580,155 @@ public sealed class LifecycleHookTests
 
         await MessageServiceOptions.InvokeHooksAsync(hooks, context);
     }
+
+    private static void RegisterOutboxHooks(
+        MessageServiceOptions options,
+        string hooksPropertyName,
+        List<int> invocationOrder,
+        params int[] hookIds)
+    {
+        foreach (var hookId in hookIds)
+        {
+            switch (hooksPropertyName)
+            {
+                case nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks):
+                    options.BeforeOutboxEnqueue(_ =>
+                    {
+                        invocationOrder.Add(hookId);
+                        return Task.CompletedTask;
+                    });
+                    break;
+                case nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks):
+                    options.AfterOutboxEnqueued(_ =>
+                    {
+                        invocationOrder.Add(hookId);
+                        return Task.CompletedTask;
+                    });
+                    break;
+                case nameof(MessageServiceOptions.BeforeOutboxDispatchHooks):
+                    options.BeforeOutboxDispatch(_ =>
+                    {
+                        invocationOrder.Add(hookId);
+                        return Task.CompletedTask;
+                    });
+                    break;
+                case nameof(MessageServiceOptions.AfterOutboxDispatchedHooks):
+                    options.AfterOutboxDispatched(_ =>
+                    {
+                        invocationOrder.Add(hookId);
+                        return Task.CompletedTask;
+                    });
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(hooksPropertyName));
+            }
+        }
+    }
+
+    private static void RegisterOutboxErrorHooks(
+        MessageServiceOptions options,
+        string hooksPropertyName,
+        List<int> invocationOrder,
+        params int[] hookIds)
+    {
+        foreach (var hookId in hookIds)
+        {
+            Func<OutboxErrorContext, Task> hook = _ =>
+            {
+                invocationOrder.Add(hookId);
+                return Task.CompletedTask;
+            };
+
+            switch (hooksPropertyName)
+            {
+                case nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks):
+                    options.OnOutboxSerializeError(hook);
+                    break;
+                case nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks):
+                    options.OnOutboxDispatchError(hook);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(hooksPropertyName));
+            }
+        }
+    }
+
+    private static async Task InvokeOutboxHooksAsync(MessageServiceOptions options, string hooksPropertyName)
+    {
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+
+        switch (hooksPropertyName)
+        {
+            case nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks):
+            case nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks):
+                await MessageServiceOptions.InvokeHooksAsync(
+                    hooksPropertyName == nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks)
+                        ? options.BeforeOutboxEnqueueHooks
+                        : options.AfterOutboxEnqueuedHooks,
+                    new OutboxEnqueueContext
+                    {
+                        ServiceProvider = serviceProvider,
+                        Message = new TestSimpleMessage(),
+                        MessageType = typeof(TestSimpleMessage),
+                        OutboxMessageId = Guid.NewGuid(),
+                        CancellationToken = CancellationToken.None,
+                    });
+                break;
+            case nameof(MessageServiceOptions.BeforeOutboxDispatchHooks):
+            case nameof(MessageServiceOptions.AfterOutboxDispatchedHooks):
+                await MessageServiceOptions.InvokeHooksAsync(
+                    hooksPropertyName == nameof(MessageServiceOptions.BeforeOutboxDispatchHooks)
+                        ? options.BeforeOutboxDispatchHooks
+                        : options.AfterOutboxDispatchedHooks,
+                    new OutboxDispatchContext
+                    {
+                        ServiceProvider = serviceProvider,
+                        OutboxMessageId = Guid.NewGuid(),
+                        MessageType = typeof(TestSimpleMessage).FullName!,
+                        Payload = [],
+                        CancellationToken = CancellationToken.None,
+                    });
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(hooksPropertyName));
+        }
+    }
+
+    private static async Task InvokeOutboxErrorHooksAsync(MessageServiceOptions options, string hooksPropertyName)
+    {
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var context = new OutboxErrorContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage(),
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            DispatchedMessageType = typeof(TestSimpleMessage).FullName,
+            Exception = new InvalidOperationException("test"),
+            CancellationToken = CancellationToken.None,
+        };
+
+        var hooks = hooksPropertyName switch
+        {
+            nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks) => options.OnOutboxSerializeErrorHooks,
+            nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks) => options.OnOutboxDispatchErrorHooks,
+            _ => throw new ArgumentOutOfRangeException(nameof(hooksPropertyName)),
+        };
+
+        await MessageServiceOptions.InvokeHooksAsync(hooks, context);
+    }
+
+    private static int GetOutboxHookCount(MessageServiceOptions options, string hooksPropertyName) =>
+        hooksPropertyName switch
+        {
+            nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks) => options.BeforeOutboxEnqueueHooks.Count,
+            nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks) => options.AfterOutboxEnqueuedHooks.Count,
+            nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks) => options.OnOutboxSerializeErrorHooks.Count,
+            nameof(MessageServiceOptions.BeforeOutboxDispatchHooks) => options.BeforeOutboxDispatchHooks.Count,
+            nameof(MessageServiceOptions.AfterOutboxDispatchedHooks) => options.AfterOutboxDispatchedHooks.Count,
+            nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks) => options.OnOutboxDispatchErrorHooks.Count,
+            _ => throw new ArgumentOutOfRangeException(nameof(hooksPropertyName)),
+        };
 
     private static int GetHookCount(MessageServiceOptions options, string hooksPropertyName) =>
         hooksPropertyName switch

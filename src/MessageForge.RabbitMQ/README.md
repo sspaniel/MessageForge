@@ -196,7 +196,7 @@ After a message is successfully dispatched, the outbox row is deleted. The same 
 - Pending messages are read in `Sequence` order and dispatched in batches.
 - After a successful broker publish, the row is removed from the outbox table.
 - If dispatch fails (for example, the broker is unavailable), the row is retained and retried on the next polling cycle.
-- Publisher lifecycle hooks (`BeforeMessagePublish`, `AfterMessagePublished`, and related hooks) apply to direct publishing only, not to outbox writes or service dispatch.
+- Outbox lifecycle hooks (`BeforeOutboxEnqueue`, `AfterOutboxEnqueued`, `BeforeOutboxDispatch`, and related hooks) are invoked during enqueue and dispatch. Built-in logging and OpenTelemetry hooks are registered automatically when the outbox is enabled.
 
 ## How it works
 
@@ -309,6 +309,12 @@ Hooks are invoked in registration order (FIFO). Built-in logging hooks are regis
 | `OnMessageHandleError` | When a subscriber's `HandleAsync` throws. |
 | `OnMessageRetry` | Before a failed message is requeued for retry. |
 | `OnRetryLimitReached` | When a message has exhausted retries and will be dead-lettered. |
+| `BeforeOutboxEnqueue` | Before a message is serialized and written to the outbox table. |
+| `AfterOutboxEnqueued` | After a message is written to the outbox table. |
+| `OnOutboxSerializeError` | When outbox enqueue-time serialization fails. |
+| `BeforeOutboxDispatch` | Before an outbox message is published to the broker. |
+| `AfterOutboxDispatched` | After an outbox message is successfully published to the broker. |
+| `OnOutboxDispatchError` | When dispatching an outbox message to the broker fails. |
 
 ```csharp
 options.OnMessageHandleError(ctx =>
@@ -319,4 +325,4 @@ options.OnMessageHandleError(ctx =>
 });
 ```
 
-Hook context types (`MessageServiceContext`, `MessagePublishContext`, `MessageHandleContext`, `MessageErrorContext`) expose the service provider, message, message type, delivery count, retry/dead-letter flags, cancellation token, and the in-flight `Activity` when applicable.
+Hook context types (`MessageServiceContext`, `MessagePublishContext`, `MessageHandleContext`, `MessageErrorContext`, `OutboxEnqueueContext`, `OutboxDispatchContext`, `OutboxErrorContext`) expose the service provider, message, message type, delivery count, retry/dead-letter flags, cancellation token, and the in-flight `Activity` when applicable.

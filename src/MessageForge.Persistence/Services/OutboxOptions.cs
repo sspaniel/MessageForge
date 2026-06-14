@@ -1,4 +1,6 @@
 using MessageForge.Persistence.Outbox;
+using MessageForge.Persistence.Outbox.Lifecycle;
+using MessageForge.Publishers;
 
 namespace MessageForge.Persistence.Services;
 
@@ -21,6 +23,21 @@ public sealed class OutboxOptions
     internal Type DbContextType { get; set; } = null!;
 
     internal bool EnableDeduplication { get; set; } = true;
+
+    internal PublisherSerializerExceptionBehavior SerializerExceptionBehavior { get; set; }
+        = PublisherSerializerExceptionBehavior.Ignore;
+
+    internal LinkedList<Func<OutboxEnqueueContext, Task>> BeforeOutboxEnqueueHooks { get; } = new();
+
+    internal LinkedList<Func<OutboxEnqueueContext, Task>> AfterOutboxEnqueuedHooks { get; } = new();
+
+    internal LinkedList<Func<OutboxErrorContext, Task>> OnOutboxSerializeErrorHooks { get; } = new();
+
+    internal LinkedList<Func<OutboxDispatchContext, Task>> BeforeOutboxDispatchHooks { get; } = new();
+
+    internal LinkedList<Func<OutboxDispatchContext, Task>> AfterOutboxDispatchedHooks { get; } = new();
+
+    internal LinkedList<Func<OutboxErrorContext, Task>> OnOutboxDispatchErrorHooks { get; } = new();
 
     /// <summary>
     /// Configures the database context type used for the outbox.
@@ -91,6 +108,16 @@ public sealed class OutboxOptions
         if (PollingInterval <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(PollingInterval));
+        }
+    }
+
+    internal static async Task InvokeHooksAsync<TContext>(
+        IEnumerable<Func<TContext, Task>> hooks,
+        TContext context)
+    {
+        foreach (var hook in hooks)
+        {
+            await hook(context);
         }
     }
 }

@@ -1,4 +1,5 @@
 using MessageForge.Persistence.Outbox;
+using MessageForge.Persistence.Outbox.Lifecycle;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -68,8 +69,46 @@ internal sealed class OutboxService : BackgroundService
 
         foreach (var message in batch)
         {
-            await dispatcher.DispatchAsync(message.MessageType, message.Payload, cancellationToken);
-            dispatchedIds.Add(message.Id);
+            OutboxDispatchContext? dispatchContext = null;
+
+            try
+            {
+                dispatchContext = new OutboxDispatchContext
+                {
+                    ServiceProvider = scope.ServiceProvider,
+                    OutboxMessageId = message.Id,
+                    MessageType = message.MessageType,
+                    Payload = message.Payload,
+                    CancellationToken = cancellationToken,
+                };
+
+                await OutboxOptions.InvokeHooksAsync(_outboxOptions.BeforeOutboxDispatchHooks, dispatchContext);
+                await dispatcher.DispatchAsync(message.MessageType, message.Payload, cancellationToken);
+                await OutboxOptions.InvokeHooksAsync(_outboxOptions.AfterOutboxDispatchedHooks, dispatchContext);
+                dispatchedIds.Add(message.Id);
+            }
+            catch (Exception error) when (error is not OperationCanceledException)
+            {
+                _logger.LogError(
+                    error,
+                    "Failed to dispatch outbox message {OutboxMessageId} of type {MessageType}.",
+                    message.Id,
+                    message.MessageType);
+
+                await OutboxOptions.InvokeHooksAsync(
+                    _outboxOptions.OnOutboxDispatchErrorHooks,
+                    new OutboxErrorContext
+                    {
+                        ServiceProvider = scope.ServiceProvider,
+                        MessageType = Type.GetType(message.MessageType) ?? typeof(object),
+                        OutboxMessageId = message.Id,
+                        DispatchedMessageType = message.MessageType,
+                        Payload = message.Payload,
+                        Exception = error,
+                        CancellationToken = cancellationToken,
+                        Activity = dispatchContext?.Activity,
+                    });
+            }
         }
 
         if (dispatchedIds.Count > 0)

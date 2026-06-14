@@ -1,3 +1,5 @@
+using System.Text.Json;
+using MessageForge.Persistence.Outbox.Lifecycle;
 using MessageForge.Persistence.Services;
 using MessageForge.Publishers;
 using Microsoft.EntityFrameworkCore;
@@ -30,20 +32,61 @@ internal sealed class OutboxPublisher : IPublisher
         var outboxMessageId = ResolveOutboxMessageId(message);
 
         var skipDuplicate = _outboxOptions.EnableDeduplication
-                && (await dbContext.OutboxMessages.AnyAsync(message => message.Id == outboxMessageId, cancellationToken));
+            && (dbContext.OutboxMessages.Local.Any(m => m.Id == outboxMessageId)
+                || await dbContext.OutboxMessages.AnyAsync(m => m.Id == outboxMessageId, cancellationToken));
 
         if (skipDuplicate)
         {
             return;
         }
 
-        dbContext.OutboxMessages.Add(new OutboxMessage
+        OutboxEnqueueContext? enqueueContext = null;
+
+        try
         {
-            Id = outboxMessageId,
-            MessageType = messageType,
-            Payload = _serializer.Serialize(message),
-            CreatedAt = DateTimeOffset.UtcNow,
-        });
+            enqueueContext = new OutboxEnqueueContext
+            {
+                ServiceProvider = _serviceProvider,
+                Message = message!,
+                MessageType = typeof(TMessage),
+                OutboxMessageId = outboxMessageId,
+                CancellationToken = cancellationToken,
+            };
+
+            await OutboxOptions.InvokeHooksAsync(_outboxOptions.BeforeOutboxEnqueueHooks, enqueueContext);
+
+            var payload = _serializer.Serialize(message);
+
+            dbContext.OutboxMessages.Add(new OutboxMessage
+            {
+                Id = outboxMessageId,
+                MessageType = messageType,
+                Payload = payload,
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
+
+            await OutboxOptions.InvokeHooksAsync(_outboxOptions.AfterOutboxEnqueuedHooks, enqueueContext);
+        }
+        catch (JsonException error)
+        {
+            await OutboxOptions.InvokeHooksAsync(
+                _outboxOptions.OnOutboxSerializeErrorHooks,
+                new OutboxErrorContext
+                {
+                    ServiceProvider = _serviceProvider,
+                    Message = message,
+                    MessageType = typeof(TMessage),
+                    OutboxMessageId = outboxMessageId,
+                    Exception = error,
+                    CancellationToken = cancellationToken,
+                    Activity = enqueueContext?.Activity,
+                });
+
+            if (_outboxOptions.SerializerExceptionBehavior == PublisherSerializerExceptionBehavior.Throw)
+            {
+                throw;
+            }
+        }
     }
 
     private static Guid ResolveOutboxMessageId<TMessage>(TMessage message)

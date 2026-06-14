@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MessageForge.Persistence.Outbox.Lifecycle;
 using MessageForge.RabbitMQ.DependencyInjection;
 using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Services;
@@ -35,6 +36,25 @@ public sealed class LifecycleLoggingHookTests
 
         // assert
         GetHookCount(options, hooksPropertyName).ShouldBe(1);
+    }
+
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks))]
+    [TestCase(nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks))]
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxDispatchHooks))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxDispatchedHooks))]
+    [TestCase(nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks))]
+    public void Register_Adds_Outbox_Logging_Hook_To_Each_Collection(string hooksPropertyName)
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+
+        // act
+        LifecycleLoggingHooks.Register(options);
+
+        // assert
+        GetOutboxHookCount(options, hooksPropertyName).ShouldBe(1);
     }
 
     [Test]
@@ -124,6 +144,97 @@ public sealed class LifecycleLoggingHookTests
     }
 
     [Test]
+    public async Task Default_Outbox_Logging_Hooks_Do_Not_Log_Message_Body()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        var events = new List<string>();
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddProvider(new TestLoggerProvider(events)));
+        var serviceProvider = services.BuildServiceProvider();
+        const string secretBody = "SECRET_BODY_CONTENT";
+        var message = new TestSimpleMessage { String = secretBody };
+        var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(message);
+
+        LifecycleLoggingHooks.Register(options);
+
+        var enqueueContext = new OutboxEnqueueContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = message,
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            CancellationToken = CancellationToken.None,
+        };
+
+        var dispatchContext = new OutboxDispatchContext
+        {
+            ServiceProvider = serviceProvider,
+            OutboxMessageId = Guid.NewGuid(),
+            MessageType = typeof(TestSimpleMessage).FullName!,
+            Payload = payload,
+            CancellationToken = CancellationToken.None,
+        };
+
+        var errorContext = new OutboxErrorContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = message,
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            DispatchedMessageType = typeof(TestSimpleMessage).FullName,
+            Payload = payload,
+            Exception = new InvalidOperationException("dispatch failed"),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeOutboxEnqueueHooks, enqueueContext);
+        await MessageServiceOptions.InvokeHooksAsync(options.AfterOutboxEnqueuedHooks, enqueueContext);
+        await MessageServiceOptions.InvokeHooksAsync(options.OnOutboxSerializeErrorHooks, errorContext);
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeOutboxDispatchHooks, dispatchContext);
+        await MessageServiceOptions.InvokeHooksAsync(options.AfterOutboxDispatchedHooks, dispatchContext);
+        await MessageServiceOptions.InvokeHooksAsync(options.OnOutboxDispatchErrorHooks, errorContext);
+
+        // assert
+        events.ShouldNotBeEmpty();
+        events.ShouldAllBe(e => !e.Contains(secretBody, StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task Default_Outbox_Logging_Hooks_Do_Not_Log_Message_Body_When_Telemetry_Content_Is_Enabled()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        options.IncludeMessageContentInOpenTelemetry();
+        var events = new List<string>();
+        var services = new ServiceCollection();
+        services.AddLogging(builder => builder.AddProvider(new TestLoggerProvider(events)));
+        var serviceProvider = services.BuildServiceProvider();
+        const string secretBody = "SECRET_BODY_CONTENT";
+
+        LifecycleLoggingHooks.Register(options);
+
+        var context = new OutboxEnqueueContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage { String = secretBody },
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeOutboxEnqueueHooks, context);
+
+        // assert
+        events.ShouldNotBeEmpty();
+        events.ShouldAllBe(e => !e.Contains(secretBody, StringComparison.Ordinal));
+    }
+
+    [Test]
     public async Task AfterMessageHandled_Logging_Hook_Logs_Warning_When_HandleAsync_Return_Type_Is_Unexpected()
     {
         // arrange
@@ -170,6 +281,18 @@ public sealed class LifecycleLoggingHookTests
             nameof(MessageServiceOptions.OnMessageSerializeErrorHooks) => options.OnMessageSerializeErrorHooks.Count,
             nameof(MessageServiceOptions.OnMessageRetryHooks) => options.OnMessageRetryHooks.Count,
             nameof(MessageServiceOptions.OnRetryLimitReachedHooks) => options.OnRetryLimitReachedHooks.Count,
+            _ => throw new ArgumentOutOfRangeException(nameof(hooksPropertyName)),
+        };
+
+    private static int GetOutboxHookCount(MessageServiceOptions options, string hooksPropertyName) =>
+        hooksPropertyName switch
+        {
+            nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks) => options.BeforeOutboxEnqueueHooks.Count,
+            nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks) => options.AfterOutboxEnqueuedHooks.Count,
+            nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks) => options.OnOutboxSerializeErrorHooks.Count,
+            nameof(MessageServiceOptions.BeforeOutboxDispatchHooks) => options.BeforeOutboxDispatchHooks.Count,
+            nameof(MessageServiceOptions.AfterOutboxDispatchedHooks) => options.AfterOutboxDispatchedHooks.Count,
+            nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks) => options.OnOutboxDispatchErrorHooks.Count,
             _ => throw new ArgumentOutOfRangeException(nameof(hooksPropertyName)),
         };
 
