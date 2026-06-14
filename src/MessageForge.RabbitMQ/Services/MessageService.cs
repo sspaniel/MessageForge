@@ -42,7 +42,7 @@ internal sealed class MessageService : IHostedService
 
         await MessageServiceOptions.InvokeHooksAsync(_options.BeforeMessageServiceStartHooks, context);
 
-        var statupConnection = _connectionPool.GetConnection();
+        var statupConnection = await _connectionPool.GetConnectionAsync(cancellationToken);
         using var startupChannel = await statupConnection.CreateChannelAsync(cancellationToken: cancellationToken);
         await RabbitMQHelper.CreateDefaultExchangesAsync(startupChannel, cancellationToken);
         await RabbitMQHelper.CreateDefaultQueuesAsync(startupChannel, cancellationToken);

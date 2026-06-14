@@ -14,6 +14,7 @@ internal static class OutboxModelBuilderExtensions
             entity.Property(message => message.MessageType).IsRequired();
             entity.Property(message => message.Payload).IsRequired();
             entity.HasIndex(message => message.Sequence);
+            entity.HasIndex(message => message.CreatedAt);
         });
     }
 }

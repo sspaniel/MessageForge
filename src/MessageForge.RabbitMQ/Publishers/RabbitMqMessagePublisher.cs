@@ -11,7 +11,7 @@ internal static class RabbitMqMessagePublisher
         byte[] payload,
         CancellationToken cancellationToken)
     {
-        var connection = connectionPool.GetConnection();
+        var connection = await connectionPool.GetConnectionAsync(cancellationToken);
 
         var channelOptions = new CreateChannelOptions(
             publisherConfirmationsEnabled: true,

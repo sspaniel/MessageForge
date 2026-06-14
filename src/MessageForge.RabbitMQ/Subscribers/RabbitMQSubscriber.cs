@@ -20,6 +20,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
     private readonly IMessageSerializer _messageSerializer;
     private readonly IServiceProvider _serviceProvider;
     private readonly string _queueName;
+    private readonly MethodInfo _handleAsyncMethod;
 
     private IChannel? _channel;
     private AsyncEventingBasicConsumer? _rabbitMqConsumer;
@@ -35,11 +36,17 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
         var subscriberName = _options.SubscriberType.FullName ?? throw new ArgumentNullException(nameof(_options.SubscriberType));
         var messageTypeName = _options.MessageType.FullName ?? throw new ArgumentNullException(nameof(_options.MessageType));
         _queueName = $"{subscriberName}:{messageTypeName}";
+
+        _handleAsyncMethod = _options.SubscriberType.GetMethod(
+            name: "HandleAsync",
+            bindingAttr: BindingFlags.Instance | BindingFlags.Public,
+            types: [_options.MessageType, typeof(CancellationToken)])
+            ?? throw new MissingMethodException(_options.SubscriberType.FullName, "HandleAsync");
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        var connection = _connectionPool.GetConnection();
+        var connection = await _connectionPool.GetConnectionAsync(cancellationToken);
         using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
 
         await channel.ExchangeDeclareAsync(
@@ -83,7 +90,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        var connection = _connectionPool.GetConnection();
+        var connection = await _connectionPool.GetConnectionAsync(cancellationToken);
 
         var channelOptions = new CreateChannelOptions(
             publisherConfirmationsEnabled: true,
@@ -175,17 +182,7 @@ internal class RabbitMQSubscriber : IRabbitMQSubscriber
             using var scope = _serviceProvider.CreateScope();
             var subscriber = scope.ServiceProvider.GetRequiredService(_options.SubscriberType);
 
-            var handleMethod = _options.SubscriberType.GetMethod(
-                name: "HandleAsync",
-                bindingAttr: BindingFlags.Instance | BindingFlags.Public,
-                types: [_options.MessageType, typeof(CancellationToken)]);
-
-            if (handleMethod == null)
-            {
-                throw new MissingMethodException(_options.SubscriberType.FullName, "HandleAsync");
-            }
-
-            var result = handleMethod.Invoke(subscriber, [message, cancellationToken]);
+            var result = _handleAsyncMethod.Invoke(subscriber, [message, cancellationToken]);
             var handleAsyncReturnedUnexpectedType = false;
 
             if (result is Task taskResult)

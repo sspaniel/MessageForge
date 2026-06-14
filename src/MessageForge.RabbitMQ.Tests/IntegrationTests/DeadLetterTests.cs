@@ -72,7 +72,7 @@ public sealed class DeadLetterTests
         await _publisher.PublishAsync(message);
 
         var deadLettered = await RabbitMqTestHelpers.ReadDeadLetteredAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             body => body.Contains(message.Guid.ToString(), StringComparison.OrdinalIgnoreCase),
             expectedCount: 1,
             timeout: TimeSpan.FromSeconds(15));
@@ -92,7 +92,7 @@ public sealed class DeadLetterTests
         await _publisher.PublishAsync(message);
 
         var deadLettered = await RabbitMqTestHelpers.ReadDeadLetteredAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             body => body.Contains(message.Guid.ToString(), StringComparison.OrdinalIgnoreCase),
             expectedCount: 1,
             timeout: TimeSpan.FromSeconds(15));

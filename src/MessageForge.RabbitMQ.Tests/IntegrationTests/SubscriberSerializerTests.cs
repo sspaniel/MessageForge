@@ -69,10 +69,10 @@ public sealed class SubscriberSerializerTests
         var exchange = typeof(SerializerDeadLetterMessage).FullName!;
 
         // act
-        await RabbitMqTestHelpers.PublishRawAsync(_connectionPool.GetConnection(), exchange, malformed);
+        await RabbitMqTestHelpers.PublishRawAsync(await _connectionPool.GetConnectionAsync(), exchange, malformed);
 
         var deadLettered = await RabbitMqTestHelpers.ReadDeadLetteredAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             body => body.Contains(marker.ToString(), StringComparison.OrdinalIgnoreCase),
             expectedCount: 1,
             timeout: TimeSpan.FromSeconds(15));
@@ -91,11 +91,11 @@ public sealed class SubscriberSerializerTests
         var exchange = typeof(SerializerIgnoreMessage).FullName!;
 
         // act
-        await RabbitMqTestHelpers.PublishRawAsync(_connectionPool.GetConnection(), exchange, malformed);
+        await RabbitMqTestHelpers.PublishRawAsync(await _connectionPool.GetConnectionAsync(), exchange, malformed);
 
         // give the consumer time to ack-and-drop the message
         var deadLettered = await RabbitMqTestHelpers.ReadDeadLetteredAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             body => body.Contains(marker.ToString(), StringComparison.OrdinalIgnoreCase),
             expectedCount: 1,
             timeout: TimeSpan.FromSeconds(4));

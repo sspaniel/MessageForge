@@ -25,6 +25,11 @@ public sealed class OutboxOptions
     /// </summary>
     public TimeSpan RetentionPeriod { get; set; } = TimeSpan.FromDays(30);
 
+    /// <summary>
+    /// Gets or sets how often expired outbox messages are purged.
+    /// </summary>
+    public TimeSpan PurgeInterval { get; set; } = TimeSpan.FromMinutes(15);
+
     internal Type DbContextType { get; set; } = null!;
 
     internal bool EnableDeduplication { get; set; } = true;
@@ -101,6 +106,17 @@ public sealed class OutboxOptions
     }
 
     /// <summary>
+    /// Sets how often expired outbox messages are purged.
+    /// </summary>
+    /// <param name="purgeInterval">The purge interval.</param>
+    /// <returns>The current <see cref="OutboxOptions"/> instance.</returns>
+    public OutboxOptions WithPurgeInterval(TimeSpan purgeInterval)
+    {
+        PurgeInterval = purgeInterval;
+        return this;
+    }
+
+    /// <summary>
     /// Validates the outbox options.
     /// </summary>
     public void Validate()
@@ -129,6 +145,11 @@ public sealed class OutboxOptions
         if (RetentionPeriod <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(RetentionPeriod));
+        }
+
+        if (PurgeInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(PurgeInterval));
         }
     }
 

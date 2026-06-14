@@ -16,7 +16,7 @@ public sealed class ConnectionPoolTests
     }
 
     [Test]
-    public void Pool_Reuses_Connections_Up_To_The_Configured_Size()
+    public async Task Pool_Reuses_Connections_Up_To_The_Configured_Size()
     {
         // arrange
         const int poolSize = 2;
@@ -28,7 +28,7 @@ public sealed class ConnectionPoolTests
             var distinctConnections = new HashSet<IConnection>();
             for (var i = 0; i < poolSize * 3; i++)
             {
-                distinctConnections.Add(pool.GetConnection());
+                distinctConnections.Add(await pool.GetConnectionAsync());
             }
 
             // assert
@@ -48,12 +48,12 @@ public sealed class ConnectionPoolTests
 
         try
         {
-            var first = pool.GetConnection();
+            var first = await pool.GetConnectionAsync();
             await first.CloseAsync();
             first.IsOpen.ShouldBeFalse();
 
             // act
-            var second = pool.GetConnection();
+            var second = await pool.GetConnectionAsync();
 
             // assert
             second.IsOpen.ShouldBeTrue();
@@ -66,12 +66,12 @@ public sealed class ConnectionPoolTests
     }
 
     [Test]
-    public void Dispose_Closes_All_Pooled_Connections()
+    public async Task Dispose_Closes_All_Pooled_Connections()
     {
         // arrange
         var pool = new ConnectionPool(BuildOptions(2));
-        var first = pool.GetConnection();
-        var second = pool.GetConnection();
+        var first = await pool.GetConnectionAsync();
+        var second = await pool.GetConnectionAsync();
         first.ShouldNotBeSameAs(second);
 
         // act

@@ -72,7 +72,7 @@ public sealed class QueueConfigurationTests
         await _publisher.PublishAsync(message);
 
         var deadLettered = await RabbitMqTestHelpers.ReadDeadLetteredAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             body => body.Contains(message.Guid.ToString(), StringComparison.OrdinalIgnoreCase),
             expectedCount: 1,
             timeout: TimeSpan.FromSeconds(20));
@@ -101,7 +101,7 @@ public sealed class QueueConfigurationTests
         var publishedGuids = messages.Select(m => m.Guid.ToString()).ToList();
 
         var deadLettered = await RabbitMqTestHelpers.ReadDeadLetteredAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             body => publishedGuids.Any(guid => body.Contains(guid, StringComparison.OrdinalIgnoreCase)),
             expectedCount: expectedOverflow,
             timeout: TimeSpan.FromSeconds(15));

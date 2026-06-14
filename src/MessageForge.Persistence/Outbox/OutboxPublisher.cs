@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text.Json;
 using MessageForge.Persistence.Outbox.Lifecycle;
 using MessageForge.Persistence.Services;
@@ -9,6 +11,8 @@ namespace MessageForge.Persistence.Outbox;
 
 internal sealed class OutboxPublisher : IPublisher
 {
+    private static readonly ConcurrentDictionary<Type, PropertyInfo?> MessageIdProperties = new();
+
     private readonly IServiceProvider _serviceProvider;
     private readonly OutboxOptions _outboxOptions;
     private readonly IOutboxMessageSerializer _serializer;
@@ -31,9 +35,19 @@ internal sealed class OutboxPublisher : IPublisher
         var messageType = typeof(TMessage).FullName ?? throw new InvalidOperationException($"Message type {typeof(TMessage).Name} has no full name.");
         var outboxMessageId = ResolveOutboxMessageId(message);
 
-        var skipDuplicate = _outboxOptions.EnableDeduplication
-            && (dbContext.OutboxMessages.Local.Any(m => m.Id == outboxMessageId)
-                || await dbContext.OutboxMessages.AnyAsync(m => m.Id == outboxMessageId, cancellationToken));
+        var skipDuplicate = false;
+
+        if (_outboxOptions.EnableDeduplication)
+        {
+            if (dbContext.OutboxMessages.Local.Any(m => m.Id == outboxMessageId))
+            {
+                skipDuplicate = true;
+            }
+            else
+            {
+                skipDuplicate = await dbContext.OutboxMessages.AnyAsync(m => m.Id == outboxMessageId, cancellationToken);
+            }
+        }
 
         if (skipDuplicate)
         {
@@ -91,7 +105,11 @@ internal sealed class OutboxPublisher : IPublisher
 
     private static Guid ResolveOutboxMessageId<TMessage>(TMessage message)
     {
-        var idProperty = typeof(TMessage).GetProperty(nameof(OutboxMessage.Id));
+        var idProperty = MessageIdProperties.GetOrAdd(
+            typeof(TMessage),
+            static messageType => messageType.GetProperty(
+                nameof(OutboxMessage.Id),
+                BindingFlags.Public | BindingFlags.Instance));
 
         if (idProperty?.PropertyType == typeof(Guid) && idProperty.GetValue(message) is Guid id && id != Guid.Empty)
         {

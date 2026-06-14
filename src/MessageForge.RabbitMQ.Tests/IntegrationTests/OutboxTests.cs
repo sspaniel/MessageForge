@@ -166,6 +166,7 @@ public sealed class OutboxTests
             {
                 outbox.WithPollingInterval(TimeSpan.FromMilliseconds(100));
                 outbox.WithRetentionPeriod(TimeSpan.FromDays(30));
+                outbox.WithPurgeInterval(TimeSpan.FromMilliseconds(100));
             });
         });
 

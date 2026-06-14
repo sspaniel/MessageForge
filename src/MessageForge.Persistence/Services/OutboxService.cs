@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using MessageForge.Persistence.Outbox;
 using MessageForge.Persistence.Outbox.Lifecycle;
 using Microsoft.EntityFrameworkCore;
@@ -9,9 +10,12 @@ namespace MessageForge.Persistence.Services;
 
 internal sealed class OutboxService : BackgroundService
 {
+    private static readonly ConcurrentDictionary<string, Type> MessageTypes = new(StringComparer.Ordinal);
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly OutboxOptions _outboxOptions;
     private readonly ILogger<OutboxService> _logger;
+    private DateTimeOffset _lastPurgeAt = DateTimeOffset.MinValue;
 
     public OutboxService(
         IServiceScopeFactory scopeFactory,
@@ -102,7 +106,7 @@ internal sealed class OutboxService : BackgroundService
                     new OutboxErrorContext
                     {
                         ServiceProvider = scope.ServiceProvider,
-                        MessageType = Type.GetType(message.MessageType) ?? typeof(object),
+                        MessageType = ResolveMessageType(message.MessageType),
                         OutboxMessageId = message.Id,
                         DispatchedMessageType = message.MessageType,
                         Payload = message.Payload,
@@ -127,10 +131,21 @@ internal sealed class OutboxService : BackgroundService
         MessageForgeOutboxDbContext dbContext,
         CancellationToken cancellationToken)
     {
-        var retentionCutoff = DateTimeOffset.UtcNow - _outboxOptions.RetentionPeriod;
+        var now = DateTimeOffset.UtcNow;
+
+        if (now - _lastPurgeAt < _outboxOptions.PurgeInterval)
+        {
+            return;
+        }
+
+        _lastPurgeAt = now;
+        var retentionCutoff = now - _outboxOptions.RetentionPeriod;
 
         await dbContext.OutboxMessages
             .Where(message => message.CreatedAt < retentionCutoff)
             .ExecuteDeleteAsync(cancellationToken);
     }
+
+    private static Type ResolveMessageType(string messageType) =>
+        MessageTypes.GetOrAdd(messageType, static name => Type.GetType(name) ?? typeof(object));
 }
