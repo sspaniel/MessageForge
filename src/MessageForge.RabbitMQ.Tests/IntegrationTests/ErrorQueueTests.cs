@@ -65,7 +65,7 @@ public sealed class ErrorQueueTests
         await _publisher.PublishAsync(message);
 
         var errors = await RabbitMqTestHelpers.DrainMatchingAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             MessageService.ErrorQueueName,
             body => body.Contains(marker, StringComparison.Ordinal),
             expectedCount: 1,
@@ -93,7 +93,7 @@ public sealed class ErrorQueueTests
         await _publisher.PublishAsync(message);
 
         var errors = await RabbitMqTestHelpers.DrainMatchingAsync(
-            _connectionPool.GetConnection(),
+            await _connectionPool.GetConnectionAsync(),
             MessageService.ErrorQueueName,
             body => body.Contains(outerMarker, StringComparison.Ordinal),
             expectedCount: 1,

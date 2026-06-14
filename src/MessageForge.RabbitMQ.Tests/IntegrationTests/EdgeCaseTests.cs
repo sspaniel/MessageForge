@@ -57,7 +57,7 @@ public sealed class EdgeCaseTests
     {
         // arrange: declare the exchange (no queue bound) so the unrouted message is silently dropped
         var exchange = typeof(NoSubscriberMessage).FullName!;
-        await RabbitMqTestHelpers.DeclareFanoutExchangeAsync(_connectionPool.GetConnection(), exchange);
+        await RabbitMqTestHelpers.DeclareFanoutExchangeAsync(await _connectionPool.GetConnectionAsync(), exchange);
         var message = new NoSubscriberMessage { Guid = Guid.NewGuid() };
 
         // act / assert
@@ -72,7 +72,7 @@ public sealed class EdgeCaseTests
         var nullBody = Encoding.UTF8.GetBytes("null");
 
         // act
-        await RabbitMqTestHelpers.PublishRawAsync(_connectionPool.GetConnection(), exchange, nullBody);
+        await RabbitMqTestHelpers.PublishRawAsync(await _connectionPool.GetConnectionAsync(), exchange, nullBody);
 
         // allow the consumer to process and ack the null message
         await Task.Delay(TimeSpan.FromSeconds(2));

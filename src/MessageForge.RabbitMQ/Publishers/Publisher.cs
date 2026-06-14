@@ -4,7 +4,6 @@ using MessageForge.RabbitMQ.ConnectionPools;
 using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Serializers;
 using MessageForge.RabbitMQ.Services;
-using RabbitMQ.Client;
 
 namespace MessageForge.RabbitMQ.Publishers;
 
@@ -45,23 +44,14 @@ internal sealed class Publisher : IPublisher
 
             await MessageServiceOptions.InvokeHooksAsync(_options.BeforeMessagePublishHooks, publishContext);
 
-            var connection = _connectionPool.GetConnection();
-
-            var channelOptions = new CreateChannelOptions(
-                publisherConfirmationsEnabled: true,
-                publisherConfirmationTrackingEnabled: true);
-
-            using var channel = await connection.CreateChannelAsync(channelOptions, cancellationToken: cancellationToken);
             var messageType = typeof(TMessage).FullName ?? throw new ArgumentNullException(nameof(TMessage));
             var jsonBytes = _messageSerializer.Serialize(message);
 
-            await channel.BasicPublishAsync(
-                exchange: messageType,
-                routingKey: string.Empty,
-                mandatory: false,
-                body: jsonBytes,
-                basicProperties: new BasicProperties { Type = messageType, Persistent = true },
-                cancellationToken: cancellationToken);
+            await RabbitMqMessagePublisher.PublishRawAsync(
+                _connectionPool,
+                messageType,
+                jsonBytes,
+                cancellationToken);
 
             await MessageServiceOptions.InvokeHooksAsync(_options.AfterMessagePublishedHooks, publishContext);
         }

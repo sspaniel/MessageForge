@@ -1,4 +1,6 @@
 ﻿using System.Reflection;
+using MessageForge.Persistence.Outbox.Lifecycle;
+using MessageForge.Persistence.Services;
 using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Subscribers;
@@ -16,6 +18,8 @@ public sealed class MessageServiceOptions
     internal int ConnectionPoolSize { get; set; } = Environment.ProcessorCount;
 
     internal PublisherOptions PublisherOptions { get; set; } = new PublisherOptions();
+
+    internal OutboxOptions? OutboxOptions { get; set; }
 
     internal ICollection<SubscriberOptions> SubscriberOptions { get; set; } = new LinkedList<SubscriberOptions>();
 
@@ -46,6 +50,24 @@ public sealed class MessageServiceOptions
     internal LinkedList<Func<MessageErrorContext, Task>> OnMessageRetryHooks { get; } = new();
 
     internal LinkedList<Func<MessageErrorContext, Task>> OnRetryLimitReachedHooks { get; } = new();
+
+    internal LinkedList<Func<OutboxEnqueueContext, Task>> BeforeOutboxEnqueueHooks =>
+        GetOutboxHooks(outboxOptions => outboxOptions.BeforeOutboxEnqueueHooks);
+
+    internal LinkedList<Func<OutboxEnqueueContext, Task>> AfterOutboxEnqueuedHooks =>
+        GetOutboxHooks(outboxOptions => outboxOptions.AfterOutboxEnqueuedHooks);
+
+    internal LinkedList<Func<OutboxErrorContext, Task>> OnOutboxSerializeErrorHooks =>
+        GetOutboxHooks(outboxOptions => outboxOptions.OnOutboxSerializeErrorHooks);
+
+    internal LinkedList<Func<OutboxDispatchContext, Task>> BeforeOutboxDispatchHooks =>
+        GetOutboxHooks(outboxOptions => outboxOptions.BeforeOutboxDispatchHooks);
+
+    internal LinkedList<Func<OutboxDispatchContext, Task>> AfterOutboxDispatchedHooks =>
+        GetOutboxHooks(outboxOptions => outboxOptions.AfterOutboxDispatchedHooks);
+
+    internal LinkedList<Func<OutboxErrorContext, Task>> OnOutboxDispatchErrorHooks =>
+        GetOutboxHooks(outboxOptions => outboxOptions.OnOutboxDispatchErrorHooks);
 
     internal bool IncludeMessageContentInTelemetry { get; set; }
 
@@ -84,6 +106,18 @@ public sealed class MessageServiceOptions
     public void ConfigureMessagePublisher(Action<PublisherOptions> configure)
     {
         configure(PublisherOptions);
+    }
+
+    /// <summary>
+    /// Enables and configures the transactional outbox.
+    /// </summary>
+    /// <param name="configure">Action to configure the outbox options.</param>
+    public void ConfigureOutbox(Action<OutboxOptions> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        OutboxOptions ??= new OutboxOptions();
+        configure(OutboxOptions);
     }
 
     /// <summary>
@@ -241,6 +275,72 @@ public sealed class MessageServiceOptions
     }
 
     /// <summary>
+    /// Registers a hook invoked before a message is written to the outbox.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeOutboxEnqueue(Func<OutboxEnqueueContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        EnsureOutboxOptions().BeforeOutboxEnqueueHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after a message is written to the outbox.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterOutboxEnqueued(Func<OutboxEnqueueContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        EnsureOutboxOptions().AfterOutboxEnqueuedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked when outbox enqueue-time serialization fails.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnOutboxSerializeError(Func<OutboxErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        EnsureOutboxOptions().OnOutboxSerializeErrorHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked before an outbox message is dispatched to the broker.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void BeforeOutboxDispatch(Func<OutboxDispatchContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        EnsureOutboxOptions().BeforeOutboxDispatchHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked after an outbox message is successfully dispatched to the broker.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void AfterOutboxDispatched(Func<OutboxDispatchContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        EnsureOutboxOptions().AfterOutboxDispatchedHooks.AddLast(hook);
+    }
+
+    /// <summary>
+    /// Registers a hook invoked when dispatching an outbox message to the broker fails.
+    /// Hooks are appended to the end of the collection and invoked in registration order (FIFO).
+    /// </summary>
+    /// <param name="hook">The hook to invoke.</param>
+    public void OnOutboxDispatchError(Func<OutboxErrorContext, Task> hook)
+    {
+        ArgumentNullException.ThrowIfNull(hook);
+        EnsureOutboxOptions().OnOutboxDispatchErrorHooks.AddLast(hook);
+    }
+
+    /// <summary>
     /// Adds a message subscriber to the service collection. The subscriber is registered for every
     /// <see cref="ISubscriber{TMessage}"/> interface it implements, applying the same configured options to each.
     /// </summary>
@@ -295,6 +395,11 @@ public sealed class MessageServiceOptions
 
         PublisherOptions.Validate();
 
+        if (OutboxOptions != null)
+        {
+            OutboxOptions.Validate();
+        }
+
         foreach (var subscriberOptions in SubscriberOptions)
         {
             if (subscriberOptions == null)
@@ -319,6 +424,19 @@ public sealed class MessageServiceOptions
         {
             await hook(context);
         }
+    }
+
+    private OutboxOptions EnsureOutboxOptions() => OutboxOptions ??= new OutboxOptions();
+
+    private LinkedList<Func<TContext, Task>> GetOutboxHooks<TContext>(
+        Func<OutboxOptions, LinkedList<Func<TContext, Task>>> selector)
+    {
+        if (OutboxOptions is null)
+        {
+            throw new InvalidOperationException("Outbox is not configured.");
+        }
+
+        return selector(OutboxOptions);
     }
 
     private void AddSubscriber(Type subscriberType, Action<SubscriberOptions> configure)

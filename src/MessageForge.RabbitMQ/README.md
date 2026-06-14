@@ -13,7 +13,7 @@ RabbitMQ integration for MessageForge. Publish and subscribe to messages using a
 dotnet add package MessageForge.RabbitMQ
 ```
 
-This package references `MessageForge` and registers services for `Microsoft.Extensions.DependencyInjection` and `Microsoft.Extensions.Hosting`.
+This package references `MessageForge` and `MessageForge.Persistence`, and registers services for `Microsoft.Extensions.DependencyInjection` and `Microsoft.Extensions.Hosting`.
 
 ## Getting Started
 
@@ -90,6 +90,115 @@ public sealed class OrderService(IPublisher publisher)
 ### Publisher-only applications
 
 If you only publish messages and do not register any subscribers, `MessageService` is not added as a hosted service. Register subscribers on the consuming application instead.
+
+## Persistence (transactional outbox)
+
+Use the transactional outbox when messages must be published atomically with database changes. Instead of sending directly to RabbitMQ, `IPublisher` writes messages to an outbox table in the same database transaction as your application data. A background service then dispatches pending messages to the broker and removes them from the table after a successful publish.
+
+This requires [Entity Framework Core](https://learn.microsoft.com/ef/core/) and the `MessageForge.Persistence` package (referenced automatically by `MessageForge.RabbitMQ`).
+
+### 1. Define a database context
+
+Inherit from `MessageForgeOutboxDbContext` and register the context with your EF Core provider as usual.
+
+```csharp
+using MessageForge.Persistence.Outbox;
+using Microsoft.EntityFrameworkCore;
+
+public sealed class AppDbContext : MessageForgeOutboxDbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options)
+    {
+    }
+
+    // your DbSets
+}
+```
+
+Apply EF Core migrations (or `EnsureCreated` in development) so the `MessageForge.OutboxMessages` table exists. The outbox table stores pending messages with a monotonic `Sequence` column used for dequeue ordering.
+
+### 2. Enable the outbox
+
+Call `UseOutbox<TDbContext>()` inside `AddMessageForgeRabbitMQ`. When the outbox is enabled, `IPublisher` is registered as a scoped outbox writer and an `OutboxService` hosted service dispatches messages to RabbitMQ.
+
+```csharp
+using MessageForge.RabbitMQ.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Database")));
+
+builder.Services.AddMessageForgeRabbitMQ(options =>
+{
+    options.UseConnectionString("amqp://guest:guest@localhost:5672/");
+
+    options.UseOutbox<AppDbContext>(outbox =>
+    {
+        outbox.WithPollingInterval(TimeSpan.FromSeconds(1));
+        outbox.WithBatchSize(100);
+        outbox.WithDeduplication();
+    });
+
+    options.Subscribe<OrderPlacedHandler>();
+});
+```
+
+### 3. Publish inside a unit of work
+
+Inject `IUnitOfWork` and `IPublisher`. Begin a transaction, publish one or more messages, commit your application changes, then commit the unit of work. If the transaction is rolled back, outbox rows are not persisted and messages are never dispatched.
+
+```csharp
+using MessageForge.Persistence.UnitOfWork;
+using MessageForge.Publishers;
+
+public sealed class OrderService(IUnitOfWork unitOfWork, IPublisher publisher, AppDbContext db)
+{
+    public async Task PlaceOrderAsync(OrderPlaced order, CancellationToken cancellationToken = default)
+    {
+        await unitOfWork.BeginAsync(cancellationToken);
+        db.Orders.Add(/* ... */);
+        await publisher.PublishAsync(order, cancellationToken);
+        await unitOfWork.CommitAsync(cancellationToken);
+    }
+}
+```
+
+`IUnitOfWork` and `IPublisher` are scoped services and must be resolved from the same DI scope as your `DbContext`.
+
+### Outbox options
+
+Configure outbox behavior through the delegate passed to `UseOutbox<TDbContext>()`.
+
+| Method | Default | Description |
+| --- | --- | --- |
+| `WithPollingInterval(TimeSpan)` | `1` second | How often the service polls when the outbox is idle. When a full batch is pending, the service processes continuously until the backlog is drained. |
+| `WithBatchSize(int)` | `100` | Maximum number of messages dispatched per service cycle. Increase this when draining large backlogs. |
+| `WithDeduplication(bool)` | `true` | When enabled, skips publishing if a pending outbox row with the same `Id` already exists. |
+| `WithRetentionPeriod(TimeSpan)` | `30` days | Deletes undispatched outbox rows older than this period. |
+| `WithPurgeInterval(TimeSpan)` | `15` minutes | How often expired outbox rows are purged. |
+
+### Deduplication
+
+When deduplication is enabled, the outbox message `Id` is resolved from a `Guid Id` property on the message type when present and non-empty. Otherwise a new `Guid` is generated for each publish. Duplicate publishes with the same `Id` while a row is still pending are silently skipped.
+
+```csharp
+public sealed class OrderPlaced
+{
+    public Guid Id { get; set; }  // used as the outbox message Id for deduplication
+    public decimal Total { get; set; }
+}
+```
+
+After a message is successfully dispatched, the outbox row is deleted. The same `Id` can be published again in a later transaction.
+
+### How the outbox service works
+
+- Pending messages are read in `Sequence` order and dispatched in batches.
+- After a successful broker publish, the row is removed from the outbox table.
+- If dispatch fails (for example, the broker is unavailable), the row is retained and retried on the next polling cycle.
+- Undispatched rows older than the configured retention period are deleted on the purge interval.
+- Outbox lifecycle hooks (`BeforeOutboxEnqueue`, `AfterOutboxEnqueued`, `BeforeOutboxDispatch`, and related hooks) are invoked during enqueue and dispatch. Built-in logging and OpenTelemetry hooks are registered automatically when the outbox is enabled.
 
 ## How it works
 
@@ -202,6 +311,12 @@ Hooks are invoked in registration order (FIFO). Built-in logging hooks are regis
 | `OnMessageHandleError` | When a subscriber's `HandleAsync` throws. |
 | `OnMessageRetry` | Before a failed message is requeued for retry. |
 | `OnRetryLimitReached` | When a message has exhausted retries and will be dead-lettered. |
+| `BeforeOutboxEnqueue` | Before a message is serialized and written to the outbox table. |
+| `AfterOutboxEnqueued` | After a message is written to the outbox table. |
+| `OnOutboxSerializeError` | When outbox enqueue-time serialization fails. |
+| `BeforeOutboxDispatch` | Before an outbox message is published to the broker. |
+| `AfterOutboxDispatched` | After an outbox message is successfully published to the broker. |
+| `OnOutboxDispatchError` | When dispatching an outbox message to the broker fails. |
 
 ```csharp
 options.OnMessageHandleError(ctx =>
@@ -212,4 +327,4 @@ options.OnMessageHandleError(ctx =>
 });
 ```
 
-Hook context types (`MessageServiceContext`, `MessagePublishContext`, `MessageHandleContext`, `MessageErrorContext`) expose the service provider, message, message type, delivery count, retry/dead-letter flags, cancellation token, and the in-flight `Activity` when applicable.
+Hook context types (`MessageServiceContext`, `MessagePublishContext`, `MessageHandleContext`, `MessageErrorContext`, `OutboxEnqueueContext`, `OutboxDispatchContext`, `OutboxErrorContext`) expose the service provider, message, message type, delivery count, retry/dead-letter flags, cancellation token, and the in-flight `Activity` when applicable.

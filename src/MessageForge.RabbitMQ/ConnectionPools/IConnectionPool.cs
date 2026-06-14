@@ -10,5 +10,6 @@ public interface IConnectionPool : IDisposable
     /// <summary>
     /// Gets a connection from the pool.
     /// </summary>
-    IConnection GetConnection();
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default);
 }

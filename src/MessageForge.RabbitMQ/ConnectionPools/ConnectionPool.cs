@@ -13,13 +13,16 @@ namespace MessageForge.RabbitMQ.ConnectionPools;
 public class ConnectionPool(MessageServiceOptions options) : IConnectionPool
 {
     private readonly MessageServiceOptions _options = options;
-    private readonly Queue<IConnection> _connections = new Queue<IConnection>();
+    private readonly Queue<IConnection> _connections = new();
+    private readonly SemaphoreSlim _poolLock = new(1, 1);
 
     /// <summary>
     /// Disposes the connection pool.
     /// </summary>
     public void Dispose()
     {
+        _poolLock.Dispose();
+
         while (_connections.Count > 0)
         {
             var connection = _connections.Dequeue();
@@ -29,12 +32,12 @@ public class ConnectionPool(MessageServiceOptions options) : IConnectionPool
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>
-    /// Gets a connection from the pool.
-    /// </summary>
-    public IConnection GetConnection()
+    /// <inheritdoc />
+    public async Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
     {
-        lock (_connections)
+        await _poolLock.WaitAsync(cancellationToken);
+
+        try
         {
             if (_connections.Count >= _options.ConnectionPoolSize)
             {
@@ -58,9 +61,13 @@ public class ConnectionPool(MessageServiceOptions options) : IConnectionPool
                 RequestedHeartbeat = TimeSpan.FromSeconds(5),
             };
 
-            var newConnection = factory.CreateConnectionAsync().Result;
+            var newConnection = await factory.CreateConnectionAsync(cancellationToken);
             _connections.Enqueue(newConnection);
             return newConnection;
+        }
+        finally
+        {
+            _poolLock.Release();
         }
     }
 }

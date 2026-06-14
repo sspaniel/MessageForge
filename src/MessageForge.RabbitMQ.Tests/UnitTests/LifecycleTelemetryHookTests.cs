@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using MessageForge.Persistence.Outbox.Lifecycle;
 using MessageForge.RabbitMQ.DependencyInjection;
 using MessageForge.RabbitMQ.Lifecycle;
 using MessageForge.RabbitMQ.Services;
@@ -6,7 +7,6 @@ using MessageForge.RabbitMQ.Tests.TestObjects;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using OpenTelemetry;
 using OpenTelemetry.Trace;
 using Shouldly;
 
@@ -38,6 +38,25 @@ public sealed class LifecycleTelemetryHookTests
 
         // assert
         GetHookCount(options, hooksPropertyName).ShouldBe(1);
+    }
+
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks))]
+    [TestCase(nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks))]
+    [TestCase(nameof(MessageServiceOptions.BeforeOutboxDispatchHooks))]
+    [TestCase(nameof(MessageServiceOptions.AfterOutboxDispatchedHooks))]
+    [TestCase(nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks))]
+    public void Register_Adds_Outbox_Telemetry_Hook_To_Each_Collection(string hooksPropertyName)
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+
+        // act
+        LifecycleTelemetryHooks.Register(options);
+
+        // assert
+        GetOutboxHookCount(options, hooksPropertyName).ShouldBe(1);
     }
 
     [Test]
@@ -353,6 +372,312 @@ public sealed class LifecycleTelemetryHookTests
         recordedActivity.Tags.Any(t => t.Key == "messaging.message.type").ShouldBeTrue();
     }
 
+    [Test]
+    public async Task BeforeOutboxEnqueue_Excludes_Message_Body_By_Default()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
+
+        var context = new OutboxEnqueueContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage { String = "SECRET_BODY_CONTENT" },
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeOutboxEnqueueHooks, context);
+
+        // assert
+        context.Activity.ShouldNotBeNull();
+        context.Activity!.GetTagItem("messaging.message.body").ShouldBeNull();
+    }
+
+    [Test]
+    public async Task BeforeOutboxEnqueue_Includes_Message_Body_When_Enabled()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        options.IncludeMessageContentInOpenTelemetry();
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
+
+        const string secretBody = "SECRET_BODY_CONTENT";
+        var context = new OutboxEnqueueContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage { String = secretBody },
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeOutboxEnqueueHooks, context);
+
+        // assert
+        context.Activity.ShouldNotBeNull();
+        context.Activity!.GetTagItem("messaging.message.body")
+            .ShouldBe("{\"Guid\":\"00000000-0000-0000-0000-000000000000\",\"String\":\"SECRET_BODY_CONTENT\",\"Integer\":0,\"Float\":0,\"DateTime\":\"0001-01-01T00:00:00\"}");
+    }
+
+    [Test]
+    public async Task BeforeOutboxDispatch_Excludes_Payload_By_Default()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
+
+        var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new TestSimpleMessage { String = "SECRET_BODY_CONTENT" });
+
+        var context = new OutboxDispatchContext
+        {
+            ServiceProvider = serviceProvider,
+            OutboxMessageId = Guid.NewGuid(),
+            MessageType = typeof(TestSimpleMessage).FullName!,
+            Payload = payload,
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeOutboxDispatchHooks, context);
+
+        // assert
+        context.Activity.ShouldNotBeNull();
+        context.Activity!.GetTagItem("messaging.message.body").ShouldBeNull();
+    }
+
+    [Test]
+    public async Task BeforeOutboxDispatch_Includes_Payload_When_Enabled()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        options.IncludeMessageContentInOpenTelemetry();
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        using var listener = CreateActivityListener();
+
+        const string secretBody = "SECRET_BODY_CONTENT";
+        var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new TestSimpleMessage { String = secretBody });
+
+        var context = new OutboxDispatchContext
+        {
+            ServiceProvider = serviceProvider,
+            OutboxMessageId = Guid.NewGuid(),
+            MessageType = typeof(TestSimpleMessage).FullName!,
+            Payload = payload,
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.BeforeOutboxDispatchHooks, context);
+
+        // assert
+        context.Activity.ShouldNotBeNull();
+        context.Activity!.GetTagItem("messaging.message.body")
+            .ShouldBe("{\"Guid\":\"00000000-0000-0000-0000-000000000000\",\"String\":\"SECRET_BODY_CONTENT\",\"Integer\":0,\"Float\":0,\"DateTime\":\"0001-01-01T00:00:00\"}");
+    }
+
+    [Test]
+    public async Task OnOutboxSerializeError_Excludes_Message_Body_By_Default()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        Activity? recordedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => recordedActivity = activity,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var context = new OutboxErrorContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage { String = "SECRET_BODY_CONTENT" },
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            Exception = new System.Text.Json.JsonException("serialize failed"),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.OnOutboxSerializeErrorHooks, context);
+
+        // assert
+        recordedActivity.ShouldNotBeNull();
+        recordedActivity!.GetTagItem("messaging.message.body").ShouldBeNull();
+    }
+
+    [Test]
+    public async Task OnOutboxSerializeError_Includes_Message_Body_When_Enabled()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        options.IncludeMessageContentInOpenTelemetry();
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        Activity? recordedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => recordedActivity = activity,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        const string secretBody = "SECRET_BODY_CONTENT";
+        var context = new OutboxErrorContext
+        {
+            ServiceProvider = serviceProvider,
+            Message = new TestSimpleMessage { String = secretBody },
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            Exception = new System.Text.Json.JsonException("serialize failed"),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.OnOutboxSerializeErrorHooks, context);
+
+        // assert
+        recordedActivity.ShouldNotBeNull();
+        recordedActivity!.GetTagItem("messaging.message.body")
+            .ShouldBe("{\"Guid\":\"00000000-0000-0000-0000-000000000000\",\"String\":\"SECRET_BODY_CONTENT\",\"Integer\":0,\"Float\":0,\"DateTime\":\"0001-01-01T00:00:00\"}");
+    }
+
+    [Test]
+    public async Task OnOutboxDispatchError_Excludes_Payload_By_Default()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        Activity? recordedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => recordedActivity = activity,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new TestSimpleMessage { String = "SECRET_BODY_CONTENT" });
+
+        var context = new OutboxErrorContext
+        {
+            ServiceProvider = serviceProvider,
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            DispatchedMessageType = typeof(TestSimpleMessage).FullName,
+            Payload = payload,
+            Exception = new InvalidOperationException("dispatch failed"),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.OnOutboxDispatchErrorHooks, context);
+
+        // assert
+        recordedActivity.ShouldNotBeNull();
+        recordedActivity!.GetTagItem("messaging.message.body").ShouldBeNull();
+    }
+
+    [Test]
+    public async Task OnOutboxDispatchError_Includes_Payload_When_Enabled()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.ConfigureOutbox(_ => { });
+        options.IncludeMessageContentInOpenTelemetry();
+        LifecycleTelemetryHooks.Register(options);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var serviceProvider = services.BuildServiceProvider();
+
+        Activity? recordedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MessageForgeActivitySource.Name,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = activity => recordedActivity = activity,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        const string secretBody = "SECRET_BODY_CONTENT";
+        var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new TestSimpleMessage { String = secretBody });
+
+        var context = new OutboxErrorContext
+        {
+            ServiceProvider = serviceProvider,
+            MessageType = typeof(TestSimpleMessage),
+            OutboxMessageId = Guid.NewGuid(),
+            DispatchedMessageType = typeof(TestSimpleMessage).FullName,
+            Payload = payload,
+            Exception = new InvalidOperationException("dispatch failed"),
+            CancellationToken = CancellationToken.None,
+        };
+
+        // act
+        await MessageServiceOptions.InvokeHooksAsync(options.OnOutboxDispatchErrorHooks, context);
+
+        // assert
+        recordedActivity.ShouldNotBeNull();
+        recordedActivity!.GetTagItem("messaging.message.body")
+            .ShouldBe("{\"Guid\":\"00000000-0000-0000-0000-000000000000\",\"String\":\"SECRET_BODY_CONTENT\",\"Integer\":0,\"Float\":0,\"DateTime\":\"0001-01-01T00:00:00\"}");
+    }
+
     private static ActivityListener CreateActivityListener()
     {
         var listener = new ActivityListener
@@ -381,6 +706,18 @@ public sealed class LifecycleTelemetryHookTests
             nameof(MessageServiceOptions.OnMessageSerializeErrorHooks) => options.OnMessageSerializeErrorHooks.Count,
             nameof(MessageServiceOptions.OnMessageRetryHooks) => options.OnMessageRetryHooks.Count,
             nameof(MessageServiceOptions.OnRetryLimitReachedHooks) => options.OnRetryLimitReachedHooks.Count,
+            _ => throw new ArgumentOutOfRangeException(nameof(hooksPropertyName)),
+        };
+
+    private static int GetOutboxHookCount(MessageServiceOptions options, string hooksPropertyName) =>
+        hooksPropertyName switch
+        {
+            nameof(MessageServiceOptions.BeforeOutboxEnqueueHooks) => options.BeforeOutboxEnqueueHooks.Count,
+            nameof(MessageServiceOptions.AfterOutboxEnqueuedHooks) => options.AfterOutboxEnqueuedHooks.Count,
+            nameof(MessageServiceOptions.OnOutboxSerializeErrorHooks) => options.OnOutboxSerializeErrorHooks.Count,
+            nameof(MessageServiceOptions.BeforeOutboxDispatchHooks) => options.BeforeOutboxDispatchHooks.Count,
+            nameof(MessageServiceOptions.AfterOutboxDispatchedHooks) => options.AfterOutboxDispatchedHooks.Count,
+            nameof(MessageServiceOptions.OnOutboxDispatchErrorHooks) => options.OnOutboxDispatchErrorHooks.Count,
             _ => throw new ArgumentOutOfRangeException(nameof(hooksPropertyName)),
         };
 

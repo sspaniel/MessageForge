@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MessageForge.RabbitMQ.Services;
@@ -160,6 +161,99 @@ internal static class LifecycleTelemetryHooks
             activity?.SetStatus(ActivityStatusCode.Error, "Retry limit reached.");
             return Task.CompletedTask;
         });
+
+        if (options.OutboxOptions is not null)
+        {
+            RegisterOutbox(options, includeMessageContent);
+        }
+    }
+
+    private static void RegisterOutbox(MessageServiceOptions options, bool includeMessageContent)
+    {
+        options.BeforeOutboxEnqueueHooks.AddFirst(ctx =>
+        {
+            var activity = StartLifecycleActivity(
+                "messageforge.outbox.enqueue",
+                ActivityKind.Producer);
+            SetMessageTags(activity, ctx.MessageType, ctx.Message, includeMessageContent);
+            activity?.SetTag("messaging.outbox.message.id", ctx.OutboxMessageId);
+            ctx.Activity = activity;
+            return Task.CompletedTask;
+        });
+
+        options.AfterOutboxEnqueuedHooks.AddFirst(ctx =>
+        {
+            CompleteActivity(ctx.Activity);
+            ctx.Activity = null;
+            return Task.CompletedTask;
+        });
+
+        options.OnOutboxSerializeErrorHooks.AddFirst(ctx =>
+        {
+            RecordErrorActivity(
+                "messageforge.outbox.serialize_error",
+                ctx.MessageType,
+                ctx.Message,
+                includeMessageContent,
+                ctx.Activity,
+                ctx.Exception);
+            return Task.CompletedTask;
+        });
+
+        options.BeforeOutboxDispatchHooks.AddFirst(ctx =>
+        {
+            var activity = StartLifecycleActivity(
+                "messageforge.outbox.dispatch",
+                ActivityKind.Producer);
+            SetOutboxDispatchTags(activity, ctx.MessageType, ctx.Payload, includeMessageContent);
+            activity?.SetTag("messaging.outbox.message.id", ctx.OutboxMessageId);
+            ctx.Activity = activity;
+            return Task.CompletedTask;
+        });
+
+        options.AfterOutboxDispatchedHooks.AddFirst(ctx =>
+        {
+            CompleteActivity(ctx.Activity);
+            ctx.Activity = null;
+            return Task.CompletedTask;
+        });
+
+        options.OnOutboxDispatchErrorHooks.AddFirst(ctx =>
+        {
+            using var activity = StartLifecycleActivity(
+                "messageforge.outbox.dispatch_error",
+                ActivityKind.Internal,
+                ctx.Activity);
+            SetOutboxDispatchTags(
+                activity,
+                ctx.DispatchedMessageType ?? ctx.MessageType.FullName ?? ctx.MessageType.Name,
+                ctx.Payload ?? [],
+                includeMessageContent);
+            if (ctx.OutboxMessageId is Guid outboxMessageId)
+            {
+                activity?.SetTag("messaging.outbox.message.id", outboxMessageId);
+            }
+
+            RecordException(activity, ctx.Exception);
+            return Task.CompletedTask;
+        });
+    }
+
+    private static void SetOutboxDispatchTags(
+        Activity? activity,
+        string messageType,
+        byte[] payload,
+        bool includeMessageContent)
+    {
+        activity?.SetTag("messaging.system", "rabbitmq");
+        activity?.SetTag("messaging.message.type", messageType);
+
+        if (!includeMessageContent || payload.Length == 0)
+        {
+            return;
+        }
+
+        activity?.SetTag("messaging.message.body", Encoding.UTF8.GetString(payload));
     }
 
     private static Activity? StartLifecycleActivity(

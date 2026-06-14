@@ -1,4 +1,6 @@
+using MessageForge.Persistence.Services;
 using MessageForge.Publishers;
+using MessageForge.RabbitMQ.DependencyInjection;
 using MessageForge.RabbitMQ.Publishers;
 using MessageForge.RabbitMQ.Services;
 using MessageForge.RabbitMQ.Subscribers;
@@ -151,6 +153,62 @@ public sealed class OptionsConfigurationTests
         // assert
         returned.ShouldBeSameAs(options);
         options.SerializerExceptionBehavior.ShouldBe(PublisherSerializerExceptionBehavior.Throw);
+    }
+
+    [Test]
+    public void UseOutbox_Sets_DbContextType_And_Options()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+
+        // act
+        options.UseOutbox<TestOutboxDbContext>(outbox =>
+        {
+            outbox.PollingInterval = TimeSpan.FromSeconds(2);
+            outbox.BatchSize = 25;
+        });
+
+        options.UseConnectionString("amqp://localhost");
+
+        // assert
+        options.OutboxOptions.ShouldNotBeNull();
+        options.OutboxOptions!.PollingInterval.ShouldBe(TimeSpan.FromSeconds(2));
+        options.OutboxOptions.BatchSize.ShouldBe(25);
+        Should.NotThrow(() => options.Validate());
+    }
+
+    [Test]
+    public void OutboxOptions_Has_Expected_Defaults()
+    {
+        // act
+        var options = new OutboxOptions();
+
+        // assert
+        options.PollingInterval.ShouldBe(TimeSpan.FromSeconds(1));
+        options.BatchSize.ShouldBe(100);
+        options.RetentionPeriod.ShouldBe(TimeSpan.FromDays(30));
+        options.PurgeInterval.ShouldBe(TimeSpan.FromMinutes(15));
+    }
+
+    [Test]
+    public void OutboxOptions_Fluent_Setters_Store_Values()
+    {
+        // arrange
+        var options = new OutboxOptions();
+
+        // act
+        options
+            .WithBatchSize(50)
+            .WithPollingInterval(TimeSpan.FromSeconds(5))
+            .WithDeduplication(false)
+            .WithRetentionPeriod(TimeSpan.FromDays(7))
+            .WithPurgeInterval(TimeSpan.FromMinutes(5));
+
+        // assert
+        options.BatchSize.ShouldBe(50);
+        options.PollingInterval.ShouldBe(TimeSpan.FromSeconds(5));
+        options.RetentionPeriod.ShouldBe(TimeSpan.FromDays(7));
+        options.PurgeInterval.ShouldBe(TimeSpan.FromMinutes(5));
     }
 
     private static SubscriberOptions CreateSubscriberOptions() =>
