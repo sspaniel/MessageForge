@@ -12,6 +12,7 @@ using Shouldly;
 
 namespace MessageForge.RabbitMQ.Tests.IntegrationTests;
 
+[Parallelizable(ParallelScope.None)]
 public sealed class OutboxTests
 {
     [SetUp]
@@ -22,15 +23,15 @@ public sealed class OutboxTests
         OutboxOrderedTestSubscriber.Reset();
     }
 
-    [Test]
-    public async Task Outbox_Commits_Message_And_Service_Delivers_To_Subscriber()
+    [TestCase(OutboxDatabaseProvider.PostgreSql)]
+    [TestCase(OutboxDatabaseProvider.SqlServer)]
+    public async Task Outbox_Commits_Message_And_Service_Delivers_To_Subscriber(OutboxDatabaseProvider provider)
     {
-        // arrange
-        var builder = Host.CreateApplicationBuilder();
-        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+        var (connectionString, configureDbContext) = await OutboxIntegrationTestContext.CreateDatabaseAsync(provider);
 
+        var builder = Host.CreateApplicationBuilder();
         builder.Services.AddDbContext<TestOutboxDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            configureDbContext(options, connectionString));
 
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
@@ -47,7 +48,7 @@ public sealed class OutboxTests
         });
 
         using var host = builder.Build();
-        await EnsureSchemaAsync(host.Services);
+        await OutboxIntegrationTestContext.EnsureSchemaAsync(host.Services);
         await host.StartAsync();
 
         try
@@ -82,15 +83,15 @@ public sealed class OutboxTests
         }
     }
 
-    [Test]
-    public async Task Outbox_ExecuteAsync_Works_With_EnableRetryOnFailure()
+    [TestCase(OutboxDatabaseProvider.PostgreSql)]
+    [TestCase(OutboxDatabaseProvider.SqlServer)]
+    public async Task Outbox_ExecuteAsync_Works_With_EnableRetryOnFailure(OutboxDatabaseProvider provider)
     {
-        // arrange
-        var builder = Host.CreateApplicationBuilder();
-        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+        var (connectionString, configureDbContext) = await OutboxIntegrationTestContext.CreateDatabaseWithRetryAsync(provider);
 
+        var builder = Host.CreateApplicationBuilder();
         builder.Services.AddDbContext<TestOutboxDbContext>(options =>
-            options.UseNpgsql(connectionString, npgsql => npgsql.EnableRetryOnFailure()));
+            configureDbContext(options, connectionString));
 
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
@@ -107,7 +108,7 @@ public sealed class OutboxTests
         });
 
         using var host = builder.Build();
-        await EnsureSchemaAsync(host.Services);
+        await OutboxIntegrationTestContext.EnsureSchemaAsync(host.Services);
         await host.StartAsync();
 
         try
@@ -134,15 +135,15 @@ public sealed class OutboxTests
         }
     }
 
-    [Test]
-    public async Task Outbox_Deduplication_Skips_Duplicate_Pending_Messages()
+    [TestCase(OutboxDatabaseProvider.PostgreSql)]
+    [TestCase(OutboxDatabaseProvider.SqlServer)]
+    public async Task Outbox_Deduplication_Skips_Duplicate_Pending_Messages(OutboxDatabaseProvider provider)
     {
-        // arrange
-        var builder = Host.CreateApplicationBuilder();
-        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+        var (connectionString, configureDbContext) = await OutboxIntegrationTestContext.CreateDatabaseAsync(provider);
 
+        var builder = Host.CreateApplicationBuilder();
         builder.Services.AddDbContext<TestOutboxDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            configureDbContext(options, connectionString));
 
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
@@ -156,7 +157,7 @@ public sealed class OutboxTests
         });
 
         using var host = builder.Build();
-        await EnsureSchemaAsync(host.Services);
+        await OutboxIntegrationTestContext.EnsureSchemaAsync(host.Services);
         await host.StartAsync();
 
         try
@@ -199,15 +200,15 @@ public sealed class OutboxTests
         }
     }
 
-    [Test]
-    public async Task Outbox_Purges_Messages_Past_Retention_Period()
+    [TestCase(OutboxDatabaseProvider.PostgreSql)]
+    [TestCase(OutboxDatabaseProvider.SqlServer)]
+    public async Task Outbox_Purges_Messages_Past_Retention_Period(OutboxDatabaseProvider provider)
     {
-        // arrange
-        var builder = Host.CreateApplicationBuilder();
-        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+        var (connectionString, configureDbContext) = await OutboxIntegrationTestContext.CreateDatabaseAsync(provider);
 
+        var builder = Host.CreateApplicationBuilder();
         builder.Services.AddDbContext<TestOutboxDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            configureDbContext(options, connectionString));
 
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
@@ -222,7 +223,7 @@ public sealed class OutboxTests
         });
 
         using var host = builder.Build();
-        await EnsureSchemaAsync(host.Services);
+        await OutboxIntegrationTestContext.EnsureSchemaAsync(host.Services);
 
         var staleMessageId = Guid.NewGuid();
 
@@ -260,15 +261,15 @@ public sealed class OutboxTests
         }
     }
 
-    [Test]
-    public async Task Outbox_Dispatched_Message_Is_Removed_From_Database()
+    [TestCase(OutboxDatabaseProvider.PostgreSql)]
+    [TestCase(OutboxDatabaseProvider.SqlServer)]
+    public async Task Outbox_Dispatched_Message_Is_Removed_From_Database(OutboxDatabaseProvider provider)
     {
-        // arrange
-        var builder = Host.CreateApplicationBuilder();
-        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+        var (connectionString, configureDbContext) = await OutboxIntegrationTestContext.CreateDatabaseAsync(provider);
 
+        var builder = Host.CreateApplicationBuilder();
         builder.Services.AddDbContext<TestOutboxDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            configureDbContext(options, connectionString));
 
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
@@ -280,7 +281,7 @@ public sealed class OutboxTests
 
         using var host = builder.Build();
 
-        await EnsureSchemaAsync(host.Services);
+        await OutboxIntegrationTestContext.EnsureSchemaAsync(host.Services);
 
         using (var scope = host.Services.CreateScope())
         {
@@ -315,11 +316,12 @@ public sealed class OutboxTests
         }
     }
 
-    [Test]
-    public async Task Outbox_Retains_Message_During_Broker_Outage_Then_Delivers_On_Recovery()
+    [TestCase(OutboxDatabaseProvider.PostgreSql)]
+    [TestCase(OutboxDatabaseProvider.SqlServer)]
+    public async Task Outbox_Retains_Message_During_Broker_Outage_Then_Delivers_On_Recovery(OutboxDatabaseProvider provider)
     {
-        // arrange
         using var host = await CreateAndStartOutboxHostAsync(
+            provider,
             configureOutbox: outbox => outbox.WithPollingInterval(TimeSpan.FromMilliseconds(100)),
             configure: options => options.Subscribe<OutboxTestSubscriber>(subscriber =>
                 subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50))));
@@ -376,15 +378,15 @@ public sealed class OutboxTests
         }
     }
 
-    [Test]
-    public async Task Outbox_Delivers_Multiple_Messages_In_Sequence_Order()
+    [TestCase(OutboxDatabaseProvider.PostgreSql)]
+    [TestCase(OutboxDatabaseProvider.SqlServer)]
+    public async Task Outbox_Delivers_Multiple_Messages_In_Sequence_Order(OutboxDatabaseProvider provider)
     {
-        // arrange
-        var builder = Host.CreateApplicationBuilder();
-        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+        var (connectionString, configureDbContext) = await OutboxIntegrationTestContext.CreateDatabaseAsync(provider);
 
+        var builder = Host.CreateApplicationBuilder();
         builder.Services.AddDbContext<TestOutboxDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            configureDbContext(options, connectionString));
 
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
@@ -394,6 +396,7 @@ public sealed class OutboxTests
             {
                 outbox.WithPollingInterval(TimeSpan.FromMilliseconds(100));
                 outbox.WithBatchSize(10);
+                outbox.WithDispatchConcurrency(1);
             });
 
             options.Subscribe<OutboxOrderedTestSubscriber>(subscriber =>
@@ -404,7 +407,7 @@ public sealed class OutboxTests
         });
 
         using var host = builder.Build();
-        await EnsureSchemaAsync(host.Services);
+        await OutboxIntegrationTestContext.EnsureSchemaAsync(host.Services);
         await host.StartAsync();
 
         try
@@ -446,14 +449,15 @@ public sealed class OutboxTests
     }
 
     private static async Task<IHost> CreateAndStartOutboxHostAsync(
+        OutboxDatabaseProvider provider,
         Action<OutboxOptions>? configureOutbox = null,
         Action<MessageServiceOptions>? configure = null)
     {
-        var builder = Host.CreateApplicationBuilder();
-        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+        var (connectionString, configureDbContext) = await OutboxIntegrationTestContext.CreateDatabaseAsync(provider);
 
+        var builder = Host.CreateApplicationBuilder();
         builder.Services.AddDbContext<TestOutboxDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            configureDbContext(options, connectionString));
 
         builder.Services.AddMessageForgeRabbitMQ(options =>
         {
@@ -469,15 +473,8 @@ public sealed class OutboxTests
         });
 
         var host = builder.Build();
-        await EnsureSchemaAsync(host.Services);
+        await OutboxIntegrationTestContext.EnsureSchemaAsync(host.Services);
         await host.StartAsync();
         return host;
-    }
-
-    private static async Task EnsureSchemaAsync(IServiceProvider services)
-    {
-        await using var scope = services.CreateAsyncScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TestOutboxDbContext>();
-        await dbContext.Database.EnsureCreatedAsync();
     }
 }

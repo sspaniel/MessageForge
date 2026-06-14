@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using MessageForge.Persistence.Outbox;
 using MessageForge.Subscribers;
 using Microsoft.EntityFrameworkCore;
+using Shouldly;
 
 namespace MessageForge.RabbitMQ.Tests.TestObjects;
 
@@ -20,6 +21,37 @@ public sealed class OutboxOrderedTestMessage
     public Guid Id { get; set; }
 
     public int Order { get; set; }
+}
+
+public sealed class OutboxMultiDispatchTestMessage
+{
+    public Guid Id { get; set; }
+}
+
+public sealed class OutboxMultiDispatchTestSubscriber : ISubscriber<OutboxMultiDispatchTestMessage>
+{
+    private static readonly ConcurrentBag<Guid> Received = [];
+
+    public static IReadOnlyCollection<Guid> ReceivedIds => Received;
+
+    public static int GetReceiveCount(Guid messageId) =>
+        Received.Count(id => id == messageId);
+
+    public static void Reset() => Received.Clear();
+
+    public static void AssertEachReceivedExactlyOnce(IEnumerable<Guid> messageIds)
+    {
+        foreach (var messageId in messageIds)
+        {
+            GetReceiveCount(messageId).ShouldBe(1, customMessage: $"Message {messageId} should be received exactly once.");
+        }
+    }
+
+    public Task HandleAsync(OutboxMultiDispatchTestMessage message, CancellationToken cancellationToken)
+    {
+        Received.Add(message.Id);
+        return Task.CompletedTask;
+    }
 }
 
 public sealed class OutboxTestSubscriber : ISubscriber<OutboxTestMessage>

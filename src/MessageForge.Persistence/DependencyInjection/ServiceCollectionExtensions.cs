@@ -22,7 +22,14 @@ public static class ServiceCollectionExtensions
         outboxOptions.Validate();
 
         services.AddSingleton(outboxOptions);
+        services.AddSingleton<IOutboxWorkerId, OutboxWorkerId>();
         services.AddSingleton<IOutboxMessageSerializer, JsonOutboxMessageSerializer>();
+
+        services.AddScoped<IOutboxMessageStore>(serviceProvider =>
+        {
+            var dbContext = (MessageForgeOutboxDbContext)serviceProvider.GetRequiredService(outboxOptions.DbContextType);
+            return new RelationalOutboxMessageStore(dbContext);
+        });
 
         var unitOfWorkType = typeof(EfUnitOfWork<>).MakeGenericType(outboxOptions.DbContextType);
         services.AddScoped(typeof(IUnitOfWork), unitOfWorkType);

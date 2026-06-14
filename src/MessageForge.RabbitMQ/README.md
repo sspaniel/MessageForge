@@ -118,6 +118,10 @@ public sealed class AppDbContext : MessageForgeOutboxDbContext
 
 Apply EF Core migrations (or `EnsureCreated` in development) so the `MessageForge.OutboxMessages` table exists. The outbox table stores pending messages with a monotonic `Sequence` column used for dequeue ordering.
 
+**Existing deployments:** add an EF Core migration after upgrading to pick up the `LockedUntil` and `LockedBy` lease columns required for multi-instance dispatch. Nullable columns are backward-compatible — existing pending rows remain claimable.
+
+**Supported database providers for outbox dispatch:** PostgreSQL (`Npgsql.EntityFrameworkCore.PostgreSQL`) and SQL Server (`Microsoft.EntityFrameworkCore.SqlServer`).
+
 ### 2. Enable the outbox
 
 Call `UseOutbox<TDbContext>()` inside `AddMessageForgeRabbitMQ`. When the outbox is enabled, `IPublisher` is registered as a scoped outbox writer and an `OutboxService` hosted service dispatches messages to RabbitMQ.
@@ -178,6 +182,8 @@ Configure outbox behavior through the delegate passed to `UseOutbox<TDbContext>(
 | `WithDeduplication(bool)` | `true` | When enabled, skips publishing if a pending outbox row with the same `Id` already exists. |
 | `WithRetentionPeriod(TimeSpan)` | `30` days | Deletes undispatched outbox rows older than this period. |
 | `WithPurgeInterval(TimeSpan)` | `15` minutes | How often expired outbox rows are purged. |
+| `WithDispatchConcurrency(int)` | `min(Environment.ProcessorCount, 16)` | Maximum number of outbox messages published concurrently per application instance. |
+| `WithLeaseDuration(TimeSpan)` | `30` seconds | How long a claimed outbox row remains locked to one dispatcher before it can be reclaimed. |
 
 ### Deduplication
 
@@ -195,10 +201,13 @@ After a message is successfully dispatched, the outbox row is deleted. The same 
 
 ### How the outbox service works
 
-- Pending messages are read in `Sequence` order and dispatched in batches.
-- After a successful broker publish, the row is removed from the outbox table.
-- If dispatch fails (for example, the broker is unavailable), the row is retained and retried on the next polling cycle.
+- Multiple application instances can dispatch from the same outbox table safely. Each instance claims rows using database-native leasing (`FOR UPDATE SKIP LOCKED` on PostgreSQL, `READPAST`/`UPDLOCK` on SQL Server) before publishing.
+- Pending messages are claimed in `Sequence` order and dispatched in batches with configurable parallel publish concurrency per instance.
+- After a successful broker publish (publisher confirmation), the row is removed from the outbox table.
+- If dispatch fails (for example, the broker is unavailable), the lease is released and the row is retried on the next polling cycle.
+- If a dispatcher stops while holding a lease, the row becomes available again after `WithLeaseDuration` expires.
 - Undispatched rows older than the configured retention period are deleted on the purge interval.
+- Delivery is **at-least-once**: consumers must be idempotent. A crash after the broker acknowledges a publish but before the outbox row is deleted can cause redelivery.
 - Outbox lifecycle hooks (`BeforeOutboxEnqueue`, `AfterOutboxEnqueued`, `BeforeOutboxDispatch`, and related hooks) are invoked during enqueue and dispatch. Built-in logging and OpenTelemetry hooks are registered automatically when the outbox is enabled.
 
 ## How it works

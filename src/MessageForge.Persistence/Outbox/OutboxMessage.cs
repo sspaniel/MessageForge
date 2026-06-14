@@ -29,4 +29,14 @@ public sealed class OutboxMessage
     /// Gets or sets when the message was enqueued.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets when the dispatch lease expires. <c>null</c> means the message is available to claim.
+    /// </summary>
+    public DateTimeOffset? LockedUntil { get; set; }
+
+    /// <summary>
+    /// Gets or sets the worker identifier that currently holds the dispatch lease.
+    /// </summary>
+    public string? LockedBy { get; set; }
 }

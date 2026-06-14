@@ -1,94 +1,124 @@
+using System.Collections.Concurrent;
 using MessageForge.Persistence.Outbox;
+using MessageForge.Persistence.Services;
 using MessageForge.RabbitMQ.ConnectionPools;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Exceptions;
 
 namespace MessageForge.RabbitMQ.Outbox;
 
-internal sealed class RabbitMqOutboxDispatcher(IConnectionPool connectionPool) : IOutboxDispatcher, IAsyncDisposable
+internal sealed class RabbitMqOutboxDispatcher(
+    IConnectionPool connectionPool,
+    OutboxOptions outboxOptions) : IOutboxDispatcher, IAsyncDisposable
 {
     private static readonly CreateChannelOptions PublishChannelOptions = new(
         publisherConfirmationsEnabled: true,
         publisherConfirmationTrackingEnabled: true);
 
     private readonly IConnectionPool _connectionPool = connectionPool;
-    private readonly SemaphoreSlim _publishLock = new(1, 1);
-    private IChannel? _publishChannel;
+    private readonly SemaphoreSlim _dispatchLimiter = new(outboxOptions.DispatchConcurrency, outboxOptions.DispatchConcurrency);
+    private readonly ConcurrentStack<PublishChannelLease> _channelPool = new();
 
     /// <inheritdoc />
     public async Task DispatchAsync(string messageType, byte[] payload, CancellationToken cancellationToken = default)
     {
-        await _publishLock.WaitAsync(cancellationToken);
+        await _dispatchLimiter.WaitAsync(cancellationToken);
+
+        PublishChannelLease? lease = null;
+        var returnToPool = false;
 
         try
         {
             try
             {
-                await PublishAsync(messageType, payload, cancellationToken);
+                lease = await RentChannelAsync(cancellationToken);
+                await PublishAsync(lease, messageType, payload, cancellationToken);
+                returnToPool = true;
             }
             catch (Exception exception) when (exception is not PublishException)
             {
-                await DisposePublishChannelAsync();
-                await PublishAsync(messageType, payload, cancellationToken);
+                if (lease is not null)
+                {
+                    await lease.DisposeAsync();
+                    lease = null;
+                }
+
+                lease = await CreateChannelAsync(cancellationToken);
+                await PublishAsync(lease, messageType, payload, cancellationToken);
+                returnToPool = true;
             }
         }
         finally
         {
-            _publishLock.Release();
+            if (returnToPool && lease is { Channel.IsOpen: true })
+            {
+                _channelPool.Push(lease);
+            }
+            else if (lease is not null)
+            {
+                await lease.DisposeAsync();
+            }
+
+            _dispatchLimiter.Release();
         }
     }
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        await _publishLock.WaitAsync();
+        while (_channelPool.TryPop(out var lease))
+        {
+            await lease.DisposeAsync();
+        }
 
-        try
-        {
-            await DisposePublishChannelAsync();
-        }
-        finally
-        {
-            _publishLock.Release();
-            _publishLock.Dispose();
-        }
+        _dispatchLimiter.Dispose();
     }
 
-    private async Task PublishAsync(string messageType, byte[] payload, CancellationToken cancellationToken)
+    private static async Task PublishAsync(
+        PublishChannelLease lease,
+        string messageType,
+        byte[] payload,
+        CancellationToken cancellationToken)
     {
-        var channel = await GetOrCreatePublishChannelAsync(cancellationToken);
+        lease.Properties.Type = messageType;
 
-        await channel.BasicPublishAsync(
+        await lease.Channel.BasicPublishAsync(
             exchange: messageType,
             routingKey: string.Empty,
             mandatory: false,
             body: payload,
-            basicProperties: new BasicProperties { Type = messageType, Persistent = true },
+            basicProperties: lease.Properties,
             cancellationToken: cancellationToken);
     }
 
-    private async Task<IChannel> GetOrCreatePublishChannelAsync(CancellationToken cancellationToken)
+    private async Task<PublishChannelLease> RentChannelAsync(CancellationToken cancellationToken)
     {
-        if (_publishChannel is { IsOpen: true })
+        while (_channelPool.TryPop(out var lease))
         {
-            return _publishChannel;
+            if (lease.Channel.IsOpen)
+            {
+                return lease;
+            }
+
+            await lease.DisposeAsync();
         }
 
-        await DisposePublishChannelAsync();
-
-        var connection = await _connectionPool.GetConnectionAsync(cancellationToken);
-        _publishChannel = await connection.CreateChannelAsync(PublishChannelOptions, cancellationToken: cancellationToken);
-        return _publishChannel;
+        return await CreateChannelAsync(cancellationToken);
     }
 
-    private async Task DisposePublishChannelAsync()
+    private async Task<PublishChannelLease> CreateChannelAsync(CancellationToken cancellationToken)
     {
-        if (_publishChannel is null)
-        {
-            return;
-        }
+        var connection = await _connectionPool.GetConnectionAsync(cancellationToken);
+        var channel = await connection.CreateChannelAsync(PublishChannelOptions, cancellationToken: cancellationToken);
+        return new PublishChannelLease(channel);
+    }
 
-        await _publishChannel.DisposeAsync();
-        _publishChannel = null;
+    private sealed class PublishChannelLease(IChannel channel) : IAsyncDisposable
+    {
+        public IChannel Channel { get; } = channel;
+
+        public BasicProperties Properties { get; } = new() { Persistent = true };
+
+        public ValueTask DisposeAsync() => Channel.DisposeAsync();
     }
 }

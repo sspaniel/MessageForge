@@ -12,6 +12,7 @@ namespace MessageForge.Persistence.Outbox;
 internal sealed class OutboxPublisher : IPublisher
 {
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> MessageIdProperties = new();
+    private static readonly ConcurrentDictionary<Type, string> MessageTypeNames = new();
 
     private readonly IServiceProvider _serviceProvider;
     private readonly OutboxOptions _outboxOptions;
@@ -32,7 +33,11 @@ internal sealed class OutboxPublisher : IPublisher
         where TMessage : new()
     {
         var dbContext = (MessageForgeOutboxDbContext)_serviceProvider.GetRequiredService(_outboxOptions.DbContextType);
-        var messageType = typeof(TMessage).FullName ?? throw new InvalidOperationException($"Message type {typeof(TMessage).Name} has no full name.");
+        
+        var messageType = MessageTypeNames.GetOrAdd(
+            typeof(TMessage),
+            static type => type.FullName ?? throw new InvalidOperationException($"Message type {type.Name} has no full name."));
+        
         var outboxMessageId = ResolveOutboxMessageId(message);
 
         var skipDuplicate = false;
@@ -45,7 +50,9 @@ internal sealed class OutboxPublisher : IPublisher
             }
             else
             {
-                skipDuplicate = await dbContext.OutboxMessages.AnyAsync(m => m.Id == outboxMessageId, cancellationToken);
+                skipDuplicate = await dbContext.OutboxMessages
+                    .AsNoTracking()
+                    .AnyAsync(m => m.Id == outboxMessageId, cancellationToken);
             }
         }
 
