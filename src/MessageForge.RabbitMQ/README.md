@@ -146,7 +146,9 @@ builder.Services.AddMessageForgeRabbitMQ(options =>
 
 ### 3. Publish inside a unit of work
 
-Inject `IUnitOfWork` and `IPublisher`. Begin a transaction, publish one or more messages, commit your application changes, then commit the unit of work. If the transaction is rolled back, outbox rows are not persisted and messages are never dispatched.
+Inject `IUnitOfWork` and `IPublisher`. Publish one or more messages inside a unit of work so outbox rows are written in the same transaction as your application changes. If the transaction is rolled back, outbox rows are not persisted and messages are never dispatched.
+
+When your `DbContext` uses connection resiliency (for example, `EnableRetryOnFailure`), use `ExecuteAsync` so the transaction runs inside EF Core's execution strategy:
 
 ```csharp
 using MessageForge.Persistence.UnitOfWork;
@@ -154,14 +156,24 @@ using MessageForge.Publishers;
 
 public sealed class OrderService(IUnitOfWork unitOfWork, IPublisher publisher, AppDbContext db)
 {
-    public async Task PlaceOrderAsync(OrderPlaced order, CancellationToken cancellationToken = default)
+    public Task PlaceOrderAsync(OrderPlaced order, CancellationToken cancellationToken = default)
     {
-        await unitOfWork.BeginAsync(cancellationToken);
-        db.Orders.Add(/* ... */);
-        await publisher.PublishAsync(order, cancellationToken);
-        await unitOfWork.CommitAsync(cancellationToken);
+        return unitOfWork.ExecuteAsync(async ct =>
+        {
+            db.Orders.Add(/* ... */);
+            await publisher.PublishAsync(order, ct);
+        }, cancellationToken);
     }
 }
+```
+
+If connection resiliency is not enabled, you can also manage the transaction explicitly:
+
+```csharp
+await unitOfWork.BeginAsync(cancellationToken);
+db.Orders.Add(/* ... */);
+await publisher.PublishAsync(order, cancellationToken);
+await unitOfWork.CommitAsync(cancellationToken);
 ```
 
 `IUnitOfWork` and `IPublisher` are scoped services and must be resolved from the same DI scope as your `DbContext`.
