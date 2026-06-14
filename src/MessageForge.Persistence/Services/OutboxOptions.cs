@@ -20,6 +20,11 @@ public sealed class OutboxOptions
     /// </summary>
     public int BatchSize { get; set; } = 100;
 
+    /// <summary>
+    /// Gets or sets how long undispatched outbox messages are retained before being deleted.
+    /// </summary>
+    public TimeSpan RetentionPeriod { get; set; } = TimeSpan.FromDays(30);
+
     internal Type DbContextType { get; set; } = null!;
 
     internal bool EnableDeduplication { get; set; } = true;
@@ -85,6 +90,17 @@ public sealed class OutboxOptions
     }
 
     /// <summary>
+    /// Sets how long undispatched outbox messages are retained before being deleted.
+    /// </summary>
+    /// <param name="retentionPeriod">The retention period.</param>
+    /// <returns>The current <see cref="OutboxOptions"/> instance.</returns>
+    public OutboxOptions WithRetentionPeriod(TimeSpan retentionPeriod)
+    {
+        RetentionPeriod = retentionPeriod;
+        return this;
+    }
+
+    /// <summary>
     /// Validates the outbox options.
     /// </summary>
     public void Validate()
@@ -108,6 +124,11 @@ public sealed class OutboxOptions
         if (PollingInterval <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(PollingInterval));
+        }
+
+        if (RetentionPeriod <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(RetentionPeriod));
         }
     }
 

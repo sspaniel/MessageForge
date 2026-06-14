@@ -54,6 +54,8 @@ internal sealed class OutboxService : BackgroundService
         var dispatcher = scope.ServiceProvider.GetRequiredService<IOutboxDispatcher>();
         var dbContext = (MessageForgeOutboxDbContext)scope.ServiceProvider.GetRequiredService(_outboxOptions.DbContextType);
 
+        await PurgeExpiredMessagesAsync(dbContext, cancellationToken);
+
         var batch = await dbContext.OutboxMessages
             .AsNoTracking()
             .OrderBy(message => message.Sequence)
@@ -119,5 +121,16 @@ internal sealed class OutboxService : BackgroundService
         }
 
         return batch.Count >= _outboxOptions.BatchSize;
+    }
+
+    private async Task PurgeExpiredMessagesAsync(
+        MessageForgeOutboxDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var retentionCutoff = DateTimeOffset.UtcNow - _outboxOptions.RetentionPeriod;
+
+        await dbContext.OutboxMessages
+            .Where(message => message.CreatedAt < retentionCutoff)
+            .ExecuteDeleteAsync(cancellationToken);
     }
 }

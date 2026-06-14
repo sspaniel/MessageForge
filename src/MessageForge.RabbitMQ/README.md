@@ -156,9 +156,8 @@ public sealed class OrderService(IUnitOfWork unitOfWork, IPublisher publisher, A
 {
     public async Task PlaceOrderAsync(OrderPlaced order, CancellationToken cancellationToken = default)
     {
-        db.Orders.Add(/* ... */);
-
         await unitOfWork.BeginAsync(cancellationToken);
+        db.Orders.Add(/* ... */);
         await publisher.PublishAsync(order, cancellationToken);
         await unitOfWork.CommitAsync(cancellationToken);
     }
@@ -176,6 +175,7 @@ Configure outbox behavior through the delegate passed to `UseOutbox<TDbContext>(
 | `WithPollingInterval(TimeSpan)` | `1` second | How often the service polls when the outbox is idle. When a full batch is pending, the service processes continuously until the backlog is drained. |
 | `WithBatchSize(int)` | `100` | Maximum number of messages dispatched per service cycle. Increase this when draining large backlogs. |
 | `WithDeduplication(bool)` | `true` | When enabled, skips publishing if a pending outbox row with the same `Id` already exists. |
+| `WithRetentionPeriod(TimeSpan)` | `30` days | Deletes undispatched outbox rows older than this period on each service cycle. |
 
 ### Deduplication
 
@@ -196,6 +196,7 @@ After a message is successfully dispatched, the outbox row is deleted. The same 
 - Pending messages are read in `Sequence` order and dispatched in batches.
 - After a successful broker publish, the row is removed from the outbox table.
 - If dispatch fails (for example, the broker is unavailable), the row is retained and retried on the next polling cycle.
+- Undispatched rows older than the configured retention period are deleted on each service cycle.
 - Outbox lifecycle hooks (`BeforeOutboxEnqueue`, `AfterOutboxEnqueued`, `BeforeOutboxDispatch`, and related hooks) are invoked during enqueue and dispatch. Built-in logging and OpenTelemetry hooks are registered automatically when the outbox is enabled.
 
 ## How it works

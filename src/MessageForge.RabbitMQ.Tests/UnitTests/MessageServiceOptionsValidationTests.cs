@@ -100,4 +100,16 @@ public sealed class MessageServiceOptionsValidationTests
         // act / assert
         Should.Throw<ArgumentOutOfRangeException>(() => options.Validate());
     }
+
+    [Test]
+    public void Validate_Throws_When_Outbox_RetentionPeriod_Is_Invalid()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.UseConnectionString("amqp://localhost");
+        options.UseOutbox<TestOutboxDbContext>(outbox => outbox.WithRetentionPeriod(TimeSpan.Zero));
+
+        // act / assert
+        Should.Throw<ArgumentOutOfRangeException>(() => options.Validate());
+    }
 }

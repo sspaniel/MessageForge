@@ -149,6 +149,66 @@ public sealed class OutboxTests
     }
 
     [Test]
+    public async Task Outbox_Purges_Messages_Past_Retention_Period()
+    {
+        // arrange
+        var builder = Host.CreateApplicationBuilder();
+        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+
+        builder.Services.AddDbContext<TestOutboxDbContext>(options =>
+            options.UseNpgsql(connectionString));
+
+        builder.Services.AddMessageForgeRabbitMQ(options =>
+        {
+            options.UseConnectionString(RabbitMqSharedFixture.ConnectionString);
+
+            options.UseOutbox<TestOutboxDbContext>(outbox =>
+            {
+                outbox.WithPollingInterval(TimeSpan.FromMilliseconds(100));
+                outbox.WithRetentionPeriod(TimeSpan.FromDays(30));
+            });
+        });
+
+        using var host = builder.Build();
+        await EnsureSchemaAsync(host.Services);
+
+        var staleMessageId = Guid.NewGuid();
+
+        using (var scope = host.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<TestOutboxDbContext>();
+
+            dbContext.OutboxMessages.Add(new OutboxMessage
+            {
+                Id = staleMessageId,
+                MessageType = typeof(OutboxTestMessage).FullName!,
+                Payload = [1, 2, 3],
+                CreatedAt = DateTimeOffset.UtcNow.AddDays(-31),
+            });
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        await host.StartAsync();
+
+        try
+        {
+            var purged = await RabbitMqTestHelpers.WaitForAsync(() =>
+            {
+                using var scope = host.Services.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<TestOutboxDbContext>();
+                return !dbContext.OutboxMessages.Any(message => message.Id == staleMessageId);
+            }, TimeSpan.FromSeconds(15));
+
+            purged.ShouldBeTrue();
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Test]
     public async Task Outbox_Dispatched_Message_Is_Removed_From_Database()
     {
         // arrange

@@ -186,6 +186,7 @@ public sealed class OptionsConfigurationTests
         // assert
         options.PollingInterval.ShouldBe(TimeSpan.FromSeconds(1));
         options.BatchSize.ShouldBe(100);
+        options.RetentionPeriod.ShouldBe(TimeSpan.FromDays(30));
     }
 
     [Test]
@@ -198,11 +199,13 @@ public sealed class OptionsConfigurationTests
         options
             .WithBatchSize(50)
             .WithPollingInterval(TimeSpan.FromSeconds(5))
-            .WithDeduplication(false);
+            .WithDeduplication(false)
+            .WithRetentionPeriod(TimeSpan.FromDays(7));
 
         // assert
         options.BatchSize.ShouldBe(50);
         options.PollingInterval.ShouldBe(TimeSpan.FromSeconds(5));
+        options.RetentionPeriod.ShouldBe(TimeSpan.FromDays(7));
     }
 
     private static SubscriberOptions CreateSubscriberOptions() =>
