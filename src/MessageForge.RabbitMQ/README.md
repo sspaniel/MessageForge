@@ -148,8 +148,6 @@ builder.Services.AddMessageForgeRabbitMQ(options =>
 
 Inject `IUnitOfWork` and `IPublisher`. Publish one or more messages inside a unit of work so outbox rows are written in the same transaction as your application changes. If the transaction is rolled back, outbox rows are not persisted and messages are never dispatched.
 
-When your `DbContext` uses connection resiliency (for example, `EnableRetryOnFailure`), use `ExecuteAsync` so the transaction runs inside EF Core's execution strategy:
-
 ```csharp
 using MessageForge.Persistence.UnitOfWork;
 using MessageForge.Publishers;
@@ -165,15 +163,6 @@ public sealed class OrderService(IUnitOfWork unitOfWork, IPublisher publisher, A
         }, cancellationToken);
     }
 }
-```
-
-If connection resiliency is not enabled, you can also manage the transaction explicitly:
-
-```csharp
-await unitOfWork.BeginAsync(cancellationToken);
-db.Orders.Add(/* ... */);
-await publisher.PublishAsync(order, cancellationToken);
-await unitOfWork.CommitAsync(cancellationToken);
 ```
 
 `IUnitOfWork` and `IPublisher` are scoped services and must be resolved from the same DI scope as your `DbContext`.

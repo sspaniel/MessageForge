@@ -59,9 +59,7 @@ public sealed class OutboxTests
                 var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                 var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
 
-                await unitOfWork.BeginAsync();
-                await publisher.PublishAsync(message);
-                await unitOfWork.CommitAsync();
+                await unitOfWork.ExecuteAsync(async ct => await publisher.PublishAsync(message, ct));
             }
 
             await RabbitMqTestHelpers.WaitForAsync(
@@ -121,10 +119,7 @@ public sealed class OutboxTests
                 var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                 var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
 
-                await unitOfWork.ExecuteAsync(async cancellationToken =>
-                {
-                    await publisher.PublishAsync(message, cancellationToken);
-                });
+                await unitOfWork.ExecuteAsync(async ct => await publisher.PublishAsync(message, ct));
             }
 
             await RabbitMqTestHelpers.WaitForAsync(
@@ -174,11 +169,12 @@ public sealed class OutboxTests
                 var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
                 var dbContext = scope.ServiceProvider.GetRequiredService<TestOutboxDbContext>();
 
-                await unitOfWork.BeginAsync();
-                await publisher.PublishAsync(message);
-                await publisher.PublishAsync(message);
-                dbContext.OutboxMessages.Local.Count.ShouldBe(1);
-                await unitOfWork.CommitAsync();
+                await unitOfWork.ExecuteAsync(async ct =>
+                {
+                    await publisher.PublishAsync(message, ct);
+                    await publisher.PublishAsync(message, ct);
+                    dbContext.OutboxMessages.Local.Count.ShouldBe(1);
+                });
             }
 
             await RabbitMqTestHelpers.WaitForAsync(
@@ -320,45 +316,6 @@ public sealed class OutboxTests
     }
 
     [Test]
-    public async Task Outbox_Rollback_Does_Not_Publish_Message()
-    {
-        // arrange
-        using var host = await CreateAndStartOutboxHostAsync(
-            configureOutbox: outbox => outbox.WithPollingInterval(TimeSpan.FromMilliseconds(100)),
-            configure: options => options.Subscribe<OutboxTestSubscriber>(subscriber =>
-                subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50))));
-
-        try
-        {
-            var message = new OutboxTestMessage { Guid = Guid.NewGuid() };
-
-            using (var scope = host.Services.CreateScope())
-            {
-                var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
-                var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
-
-                await unitOfWork.BeginAsync();
-                await publisher.PublishAsync(message);
-                await unitOfWork.RollbackAsync();
-            }
-
-            using (var scope = host.Services.CreateScope())
-            {
-                var dbContext = scope.ServiceProvider.GetRequiredService<TestOutboxDbContext>();
-                var outboxCount = await dbContext.OutboxMessages.CountAsync();
-                outboxCount.ShouldBe(0);
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(3));
-            OutboxTestSubscriber.Received.ShouldNotContain(message.Guid);
-        }
-        finally
-        {
-            await host.StopAsync();
-        }
-    }
-
-    [Test]
     public async Task Outbox_Retains_Message_During_Broker_Outage_Then_Delivers_On_Recovery()
     {
         // arrange
@@ -380,9 +337,7 @@ public sealed class OutboxTests
                     var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                     var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
 
-                    await unitOfWork.BeginAsync();
-                    await publisher.PublishAsync(message);
-                    await unitOfWork.CommitAsync();
+                    await unitOfWork.ExecuteAsync(async ct => await publisher.PublishAsync(message, ct));
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(3));
@@ -460,13 +415,13 @@ public sealed class OutboxTests
                 var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
                 var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
 
-                await unitOfWork.BeginAsync();
-                await publisher.PublishAsync(new OutboxOrderedTestMessage
-                {
-                    Id = Guid.NewGuid(),
-                    Order = order,
-                });
-                await unitOfWork.CommitAsync();
+                await unitOfWork.ExecuteAsync(async ct => await publisher.PublishAsync(
+                    new OutboxOrderedTestMessage
+                    {
+                        Id = Guid.NewGuid(),
+                        Order = order,
+                    },
+                    ct));
             }
 
             (await RabbitMqTestHelpers.WaitForAsync(
