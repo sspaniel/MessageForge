@@ -85,6 +85,61 @@ public sealed class OutboxTests
     }
 
     [Test]
+    public async Task Outbox_ExecuteAsync_Works_With_EnableRetryOnFailure()
+    {
+        // arrange
+        var builder = Host.CreateApplicationBuilder();
+        var connectionString = await PostgreSqlSharedFixture.CreateDatabaseConnectionStringAsync();
+
+        builder.Services.AddDbContext<TestOutboxDbContext>(options =>
+            options.UseNpgsql(connectionString, npgsql => npgsql.EnableRetryOnFailure()));
+
+        builder.Services.AddMessageForgeRabbitMQ(options =>
+        {
+            options.UseConnectionString(RabbitMqSharedFixture.ConnectionString);
+
+            options.UseOutbox<TestOutboxDbContext>(outbox =>
+            {
+                outbox.PollingInterval = TimeSpan.FromMilliseconds(100);
+                outbox.BatchSize = 10;
+            });
+
+            options.Subscribe<OutboxTestSubscriber>(subscriber =>
+                subscriber.Retries(maxRetryCount: 3, retryDelay: TimeSpan.FromMilliseconds(50)));
+        });
+
+        using var host = builder.Build();
+        await EnsureSchemaAsync(host.Services);
+        await host.StartAsync();
+
+        try
+        {
+            var message = new OutboxTestMessage { Guid = Guid.NewGuid() };
+
+            using (var scope = host.Services.CreateScope())
+            {
+                var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+                var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
+
+                await unitOfWork.ExecuteAsync(async cancellationToken =>
+                {
+                    await publisher.PublishAsync(message, cancellationToken);
+                });
+            }
+
+            await RabbitMqTestHelpers.WaitForAsync(
+                () => OutboxTestSubscriber.Received.Contains(message.Guid),
+                TimeSpan.FromSeconds(15));
+
+            OutboxTestSubscriber.Received.ShouldContain(message.Guid);
+        }
+        finally
+        {
+            await host.StopAsync();
+        }
+    }
+
+    [Test]
     public async Task Outbox_Deduplication_Skips_Duplicate_Pending_Messages()
     {
         // arrange

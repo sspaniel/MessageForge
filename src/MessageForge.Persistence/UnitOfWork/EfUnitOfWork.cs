@@ -1,4 +1,5 @@
 using MessageForge.Persistence.Outbox;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace MessageForge.Persistence.UnitOfWork;
@@ -59,6 +60,65 @@ internal sealed class EfUnitOfWork<TDbContext> : IUnitOfWork
         finally
         {
             await DisposeTransactionAsync();
+        }
+    }
+
+    /// <inheritdoc />
+    public Task ExecuteAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return strategy.ExecuteAsync(() => ExecuteWithinTransactionAsync(operation, cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public Task<TResult> ExecuteAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return strategy.ExecuteAsync(() => ExecuteWithinTransactionAsync(operation, cancellationToken));
+    }
+
+    private async Task ExecuteWithinTransactionAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken)
+    {
+        await BeginAsync(cancellationToken);
+
+        try
+        {
+            await operation(cancellationToken);
+            await CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            if (_transaction != null)
+            {
+                await RollbackAsync(cancellationToken);
+            }
+
+            throw;
+        }
+    }
+
+    private async Task<TResult> ExecuteWithinTransactionAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken)
+    {
+        await BeginAsync(cancellationToken);
+
+        try
+        {
+            var result = await operation(cancellationToken);
+            await CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            if (_transaction != null)
+            {
+                await RollbackAsync(cancellationToken);
+            }
+
+            throw;
         }
     }
 
