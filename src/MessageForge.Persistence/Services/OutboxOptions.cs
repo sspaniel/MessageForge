@@ -30,6 +30,16 @@ public sealed class OutboxOptions
     /// </summary>
     public TimeSpan PurgeInterval { get; set; } = TimeSpan.FromMinutes(15);
 
+    /// <summary>
+    /// Gets or sets the maximum number of outbox messages dispatched concurrently per instance.
+    /// </summary>
+    public int DispatchConcurrency { get; set; } = Math.Min(Environment.ProcessorCount, 16);
+
+    /// <summary>
+    /// Gets or sets how long a claimed outbox message remains locked before it can be reclaimed.
+    /// </summary>
+    public TimeSpan LeaseDuration { get; set; } = TimeSpan.FromSeconds(30);
+
     internal Type DbContextType { get; set; } = null!;
 
     internal bool EnableDeduplication { get; set; } = true;
@@ -117,6 +127,28 @@ public sealed class OutboxOptions
     }
 
     /// <summary>
+    /// Sets the maximum number of outbox messages dispatched concurrently per instance.
+    /// </summary>
+    /// <param name="dispatchConcurrency">The dispatch concurrency.</param>
+    /// <returns>The current <see cref="OutboxOptions"/> instance.</returns>
+    public OutboxOptions WithDispatchConcurrency(int dispatchConcurrency)
+    {
+        DispatchConcurrency = dispatchConcurrency;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets how long a claimed outbox message remains locked before it can be reclaimed.
+    /// </summary>
+    /// <param name="leaseDuration">The lease duration.</param>
+    /// <returns>The current <see cref="OutboxOptions"/> instance.</returns>
+    public OutboxOptions WithLeaseDuration(TimeSpan leaseDuration)
+    {
+        LeaseDuration = leaseDuration;
+        return this;
+    }
+
+    /// <summary>
     /// Validates the outbox options.
     /// </summary>
     public void Validate()
@@ -150,6 +182,16 @@ public sealed class OutboxOptions
         if (PurgeInterval <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(PurgeInterval));
+        }
+
+        if (DispatchConcurrency < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(DispatchConcurrency));
+        }
+
+        if (LeaseDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(LeaseDuration));
         }
     }
 

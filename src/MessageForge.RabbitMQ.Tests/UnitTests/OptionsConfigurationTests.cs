@@ -188,6 +188,8 @@ public sealed class OptionsConfigurationTests
         options.BatchSize.ShouldBe(100);
         options.RetentionPeriod.ShouldBe(TimeSpan.FromDays(30));
         options.PurgeInterval.ShouldBe(TimeSpan.FromMinutes(15));
+        options.DispatchConcurrency.ShouldBe(Math.Min(Environment.ProcessorCount, 16));
+        options.LeaseDuration.ShouldBe(TimeSpan.FromSeconds(30));
     }
 
     [Test]
@@ -202,13 +204,17 @@ public sealed class OptionsConfigurationTests
             .WithPollingInterval(TimeSpan.FromSeconds(5))
             .WithDeduplication(false)
             .WithRetentionPeriod(TimeSpan.FromDays(7))
-            .WithPurgeInterval(TimeSpan.FromMinutes(5));
+            .WithPurgeInterval(TimeSpan.FromMinutes(5))
+            .WithDispatchConcurrency(4)
+            .WithLeaseDuration(TimeSpan.FromMinutes(2));
 
         // assert
         options.BatchSize.ShouldBe(50);
         options.PollingInterval.ShouldBe(TimeSpan.FromSeconds(5));
         options.RetentionPeriod.ShouldBe(TimeSpan.FromDays(7));
         options.PurgeInterval.ShouldBe(TimeSpan.FromMinutes(5));
+        options.DispatchConcurrency.ShouldBe(4);
+        options.LeaseDuration.ShouldBe(TimeSpan.FromMinutes(2));
     }
 
     private static SubscriberOptions CreateSubscriberOptions() =>

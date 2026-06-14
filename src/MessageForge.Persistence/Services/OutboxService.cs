@@ -14,16 +14,19 @@ internal sealed class OutboxService : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly OutboxOptions _outboxOptions;
+    private readonly IOutboxWorkerId _workerId;
     private readonly ILogger<OutboxService> _logger;
     private DateTimeOffset _lastPurgeAt = DateTimeOffset.MinValue;
 
     public OutboxService(
         IServiceScopeFactory scopeFactory,
         OutboxOptions outboxOptions,
+        IOutboxWorkerId workerId,
         ILogger<OutboxService> logger)
     {
         _scopeFactory = scopeFactory;
         _outboxOptions = outboxOptions;
+        _workerId = workerId;
         _logger = logger;
     }
 
@@ -56,15 +59,16 @@ internal sealed class OutboxService : BackgroundService
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var dispatcher = scope.ServiceProvider.GetRequiredService<IOutboxDispatcher>();
+        var outboxMessageStore = scope.ServiceProvider.GetRequiredService<IOutboxMessageStore>();
         var dbContext = (MessageForgeOutboxDbContext)scope.ServiceProvider.GetRequiredService(_outboxOptions.DbContextType);
 
         await PurgeExpiredMessagesAsync(dbContext, cancellationToken);
 
-        var batch = await dbContext.OutboxMessages
-            .AsNoTracking()
-            .OrderBy(message => message.Sequence)
-            .Take(_outboxOptions.BatchSize)
-            .ToListAsync(cancellationToken);
+        var batch = await outboxMessageStore.ClaimBatchAsync(
+            _workerId.Value,
+            _outboxOptions.BatchSize,
+            _outboxOptions.LeaseDuration,
+            cancellationToken);
 
         if (batch.Count == 0)
         {
@@ -72,59 +76,135 @@ internal sealed class OutboxService : BackgroundService
         }
 
         var dispatchedIds = new List<Guid>(batch.Count);
+        var releaseIds = new List<Guid>();
 
-        foreach (var message in batch)
+        if (_outboxOptions.DispatchConcurrency == 1)
         {
-            OutboxDispatchContext? dispatchContext = null;
-
-            try
+            foreach (var message in batch)
             {
-                dispatchContext = new OutboxDispatchContext
+                await DispatchMessageAsync(
+                    scope.ServiceProvider,
+                    dispatcher,
+                    message,
+                    dispatchedIds,
+                    releaseIds,
+                    cancellationToken);
+            }
+        }
+        else
+        {
+            var resultsLock = new object();
+
+            await Parallel.ForEachAsync(
+                batch,
+                new ParallelOptions
                 {
-                    ServiceProvider = scope.ServiceProvider,
-                    OutboxMessageId = message.Id,
-                    MessageType = message.MessageType,
-                    Payload = message.Payload,
+                    MaxDegreeOfParallelism = _outboxOptions.DispatchConcurrency,
                     CancellationToken = cancellationToken,
-                };
+                },
+                async (message, ct) =>
+                {
+                    var (dispatched, release) = await TryDispatchMessageAsync(
+                        scope.ServiceProvider,
+                        dispatcher,
+                        message,
+                        ct);
 
-                await OutboxOptions.InvokeHooksAsync(_outboxOptions.BeforeOutboxDispatchHooks, dispatchContext);
-                await dispatcher.DispatchAsync(message.MessageType, message.Payload, cancellationToken);
-                await OutboxOptions.InvokeHooksAsync(_outboxOptions.AfterOutboxDispatchedHooks, dispatchContext);
-                dispatchedIds.Add(message.Id);
-            }
-            catch (Exception error) when (error is not OperationCanceledException)
-            {
-                _logger.LogError(
-                    error,
-                    "Failed to dispatch outbox message {OutboxMessageId} of type {MessageType}.",
-                    message.Id,
-                    message.MessageType);
-
-                await OutboxOptions.InvokeHooksAsync(
-                    _outboxOptions.OnOutboxDispatchErrorHooks,
-                    new OutboxErrorContext
+                    lock (resultsLock)
                     {
-                        ServiceProvider = scope.ServiceProvider,
-                        MessageType = ResolveMessageType(message.MessageType),
-                        OutboxMessageId = message.Id,
-                        DispatchedMessageType = message.MessageType,
-                        Payload = message.Payload,
-                        Exception = error,
-                        CancellationToken = cancellationToken,
-                        Activity = dispatchContext?.Activity,
-                    });
-            }
+                        if (dispatched)
+                        {
+                            dispatchedIds.Add(message.Id);
+                        }
+                        else if (release)
+                        {
+                            releaseIds.Add(message.Id);
+                        }
+                    }
+                });
         }
 
-        if (dispatchedIds.Count > 0)
-        {
-            await dbContext.OutboxMessages
-                .Where(message => dispatchedIds.Contains(message.Id))
-                .ExecuteDeleteAsync(cancellationToken);
-        }
+        await outboxMessageStore.CompleteBatchAsync(
+            _workerId.Value,
+            dispatchedIds,
+            releaseIds,
+            cancellationToken);
 
         return batch.Count >= _outboxOptions.BatchSize;
+    }
+
+    private async Task DispatchMessageAsync(
+        IServiceProvider serviceProvider,
+        IOutboxDispatcher dispatcher,
+        OutboxClaimedMessage message,
+        List<Guid> dispatchedIds,
+        List<Guid> releaseIds,
+        CancellationToken cancellationToken)
+    {
+        var (dispatched, release) = await TryDispatchMessageAsync(
+            serviceProvider,
+            dispatcher,
+            message,
+            cancellationToken);
+
+        if (dispatched)
+        {
+            dispatchedIds.Add(message.Id);
+        }
+        else if (release)
+        {
+            releaseIds.Add(message.Id);
+        }
+    }
+
+    private async Task<(bool Dispatched, bool Release)> TryDispatchMessageAsync(
+        IServiceProvider serviceProvider,
+        IOutboxDispatcher dispatcher,
+        OutboxClaimedMessage message,
+        CancellationToken cancellationToken)
+    {
+        OutboxDispatchContext? dispatchContext = null;
+
+        try
+        {
+            dispatchContext = new OutboxDispatchContext
+            {
+                ServiceProvider = serviceProvider,
+                OutboxMessageId = message.Id,
+                MessageType = message.MessageType,
+                Payload = message.Payload,
+                CancellationToken = cancellationToken,
+            };
+
+            await OutboxOptions.InvokeHooksAsync(_outboxOptions.BeforeOutboxDispatchHooks, dispatchContext);
+            await dispatcher.DispatchAsync(message.MessageType, message.Payload, cancellationToken);
+            await OutboxOptions.InvokeHooksAsync(_outboxOptions.AfterOutboxDispatchedHooks, dispatchContext);
+            return (true, false);
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger.LogError(
+                error,
+                "Failed to dispatch outbox message {OutboxMessageId} of type {MessageType}.",
+                message.Id,
+                message.MessageType);
+
+            await OutboxOptions.InvokeHooksAsync(
+                _outboxOptions.OnOutboxDispatchErrorHooks,
+                new OutboxErrorContext
+                {
+                    ServiceProvider = serviceProvider,
+                    MessageType = ResolveMessageType(message.MessageType),
+                    OutboxMessageId = message.Id,
+                    DispatchedMessageType = message.MessageType,
+                    Payload = message.Payload,
+                    Exception = error,
+                    CancellationToken = cancellationToken,
+                    Activity = dispatchContext?.Activity,
+                });
+
+            return (false, true);
+        }
     }
 
     private async Task PurgeExpiredMessagesAsync(

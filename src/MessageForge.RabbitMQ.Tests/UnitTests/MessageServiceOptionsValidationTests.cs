@@ -124,4 +124,28 @@ public sealed class MessageServiceOptionsValidationTests
         // act / assert
         Should.Throw<ArgumentOutOfRangeException>(() => options.Validate());
     }
+
+    [Test]
+    public void Validate_Throws_When_Outbox_DispatchConcurrency_Is_Invalid()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.UseConnectionString("amqp://localhost");
+        options.UseOutbox<TestOutboxDbContext>(outbox => outbox.WithDispatchConcurrency(0));
+
+        // act / assert
+        Should.Throw<ArgumentOutOfRangeException>(() => options.Validate());
+    }
+
+    [Test]
+    public void Validate_Throws_When_Outbox_LeaseDuration_Is_Invalid()
+    {
+        // arrange
+        var options = new MessageServiceOptions();
+        options.UseConnectionString("amqp://localhost");
+        options.UseOutbox<TestOutboxDbContext>(outbox => outbox.WithLeaseDuration(TimeSpan.Zero));
+
+        // act / assert
+        Should.Throw<ArgumentOutOfRangeException>(() => options.Validate());
+    }
 }
